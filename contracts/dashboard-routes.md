@@ -94,7 +94,7 @@ redirection : un `EventSource` ne la suivrait pas).
 - `id:` = `rowid` croissant de la table `events` (ordre d'insertion ; la table ne doit
   jamais être compactée par `VACUUM`, qui renumérote) ;
 - `data:` = JSON sur une ligne : `event_id`, `ts`, `time_label` (UTC), `hook_event_name`,
-  `agent_type`, `agent_id`, `tool_name` (`null` si absent) ; ni `session_id` ni autre donnée ;
+  `agent_type`, `agent_id`, `tool_name` (`null` si absent), `project` (#68) ; ni `session_id` ni autre donnée ;
 - première ligne `retry: 2000` ; commentaire `: keepalive` toutes les 15 s sans événement ;
 - sondage de la base toutes les 0,5 s : un événement ingéré est émis en moins de 2 s ;
 - curseur de départ : en-tête `Last-Event-ID` (reprise automatique du navigateur), sinon

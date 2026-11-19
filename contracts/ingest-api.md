@@ -22,14 +22,17 @@ Taille maximale du corps : **256 Ko** (262 144 octets), contrôlée sur `Content
 puis sur le flux réellement lu (lecture bornée). `ts` doit être une **chaîne** date-time
 ISO 8601 avec fuseau (un nombre est refusé) ; il est stocké normalisé en UTC.
 
+`project` est optionnel (#68) : absent, l'événement est stocké avec `project="viral-video-agents"`
+(rétrocompatibilité) ; présent, il doit respecter le motif du schéma (nom de dépôt, 100 caractères).
+
 Tout champ hors schéma (ex. `prompt`) est refusé. Un lot est **atomique** : si un seul
 événement est invalide, rien n'est écrit.
 
 ## Persistance
 
 SQLite, fichier désigné par `VVA_DB_PATH`, table `events` (clé unique `event_id`,
-index sur `ts` et `agent_id`, mode WAL, attente de verrou 5 s). Schéma créé au premier
-accès. Un `event_id` déjà connu est ignoré (idempotence).
+index sur `ts`, `agent_id` et `project`, mode WAL, attente de verrou 5 s). Schéma créé au premier
+accès ; une base antérieure au #68 reçoit la colonne `project` (défaut `viral-video-agents`). Un `event_id` déjà connu est ignoré (idempotence).
 
 ## Réponses
 

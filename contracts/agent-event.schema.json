@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chebihiF/viral-video-agents/contracts/agent-event.schema.json",
+  "$id": "https://github.com/chebihiF/agent-factory/contracts/agent-event.schema.json",
   "title": "AgentEvent",
   "description": "Événement de hook d'agent envoyé par le Mac au dashboard. Métadonnées uniquement : aucun prompt, aucune sortie d'outil, aucune donnée d'enfant.",
   "type": "object",
@@ -40,6 +40,35 @@
     "tool_name": {
       "type": ["string", "null"],
       "maxLength": 128
+    },
+    "project": {
+      "description": "Projet émetteur (nom de dépôt GitHub). Absent = \"viral-video-agents\" : événements antérieurs au #68.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "default": "viral-video-agents"
     }
-  }
+  },
+  "examples": [
+    {
+      "event_id": "6f1c2e0a-1b2c-4d5e-8f90-0a1b2c3d4e5f",
+      "ts": "2026-11-18T10:00:00+00:00",
+      "hook_event_name": "SubagentStart",
+      "session_id": "sess-1",
+      "agent_type": "dev-backend",
+      "agent_id": "agent-42",
+      "tool_name": null
+    },
+    {
+      "event_id": "0b7d9a52-3c4e-4f60-9a1b-2c3d4e5f6a7b",
+      "ts": "2026-11-20T09:30:00+00:00",
+      "hook_event_name": "PostToolUse",
+      "session_id": "sess-2",
+      "agent_type": "reviewer",
+      "agent_id": "agent-7",
+      "tool_name": "Bash",
+      "project": "agent-factory"
+    }
+  ]
 }

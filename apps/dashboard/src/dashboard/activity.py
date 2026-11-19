@@ -15,7 +15,7 @@ from dashboard import auth, db
 
 MAX_EVENTS = 100
 _SELECT = (
-    "SELECT event_id, ts, hook_event_name, agent_type, agent_id, tool_name "
+    "SELECT event_id, ts, hook_event_name, agent_type, agent_id, tool_name, project "
     "FROM events ORDER BY ts DESC, rowid DESC LIMIT ?"
 )
 _LAST_ID = "SELECT COALESCE(MAX(rowid), 0) FROM events"
@@ -32,6 +32,7 @@ class Event:
     agent_type: str | None
     agent_id: str | None
     tool_name: str | None
+    project: str
 
     @property
     def time_label(self) -> str:

@@ -20,6 +20,10 @@ MAX_BODY_BYTES = 256 * 1024
 
 Id = Annotated[str, Field(min_length=1, max_length=128, strict=True)]
 OptionalName = Annotated[str | None, Field(max_length=128, strict=True)]
+Project = Annotated[
+    str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$", strict=True)
+]
+DEFAULT_PROJECT = db.DEFAULT_PROJECT
 
 
 class AgentEvent(BaseModel):
@@ -34,6 +38,7 @@ class AgentEvent(BaseModel):
     agent_type: OptionalName = None
     agent_id: OptionalName = None
     tool_name: OptionalName = None
+    project: Project = DEFAULT_PROJECT  # absent : ancien événement (#68)
 
     def row(self) -> db.EventRow:
         values = self.model_dump()

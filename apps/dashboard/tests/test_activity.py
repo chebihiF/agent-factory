@@ -44,6 +44,7 @@ def seed(n: int, **extra: Any) -> None:
             extra.get("agent_type", "backend"),
             extra.get("agent_id", f"agent-{i % 3}"),
             extra.get("tool_name", "Bash"),
+            extra.get("project", "viral-video-agents"),
         )
         for i in range(n)
     ]
@@ -160,3 +161,11 @@ def test_static_tokens_served(client: TestClient) -> None:
     resp = client.get("/static/tokens.css")
     assert resp.status_code == 200
     assert "--color-bg" in resp.text
+
+
+# #68 : chaque événement lu porte son projet (préalable au filtre)
+def test_latest_events_carry_project(db_file: Path) -> None:
+    seed(1, project="agent-factory")
+    with db.connect() as conn:
+        [event] = activity.latest_events(conn)
+    assert event.project == "agent-factory"

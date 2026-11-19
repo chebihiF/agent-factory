@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 DEFAULT_DB_PATH = "vva.db"
+DEFAULT_PROJECT = "viral-video-agents"  # projet des événements sans champ `project` (#68)
 EVENT_COLUMNS = (
     "event_id",
     "ts",
@@ -18,6 +19,7 @@ EVENT_COLUMNS = (
     "agent_type",
     "agent_id",
     "tool_name",
+    "project",
 )
 EventRow = tuple[str | None, ...]
 TOKEN_COLUMNS = ("point_id", "ts", "session_id", "agent_id", "model", "type", "count")
@@ -34,6 +36,7 @@ CREATE TABLE IF NOT EXISTS events (
     agent_type      TEXT,
     agent_id        TEXT,
     tool_name       TEXT,
+    project         TEXT NOT NULL DEFAULT 'viral-video-agents',
     received_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);
@@ -71,6 +74,7 @@ def _insert_sql(table: str, columns: Sequence[str]) -> str:
 
 
 _INSERT = _insert_sql("events", EVENT_COLUMNS)
+_ADD_PROJECT = "ALTER TABLE events ADD COLUMN project TEXT NOT NULL DEFAULT 'viral-video-agents'"
 _INSERT_TOKENS = _insert_sql("token_usage", TOKEN_COLUMNS)
 
 
@@ -83,9 +87,19 @@ def db_path() -> Path:
     return Path(os.environ.get("VVA_DB_PATH") or DEFAULT_DB_PATH)
 
 
+def _migrate_events(conn: sqlite3.Connection) -> None:
+    """Ajoute `project` à une table `events` antérieure au #68 (anciennes lignes : défaut)."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+    if "project" not in columns:
+        with conn:
+            conn.execute(_ADD_PROJECT)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_project ON events (project)")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    _migrate_events(conn)
 
 
 def _ensure_schema(conn: sqlite3.Connection, path: Path) -> None:
