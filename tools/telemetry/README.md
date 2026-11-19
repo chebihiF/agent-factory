@@ -17,7 +17,7 @@ les hooks appellent ; pas de `datetime.UTC` ni de `zip(strict=)`, testé sous 3.
 
 | Variable | Rôle | Défaut |
 |----------|------|--------|
-| `VVA_PROJECT` | projet émetteur (nom de dépôt, ex. `agent-factory`) ; absent ou invalide : champ omis, l'ingestion applique `viral-video-agents` | aucun |
+| `VVA_PROJECT` | projet émetteur (nom de dépôt ; `agent-factory` dans `hooks/settings.example.json`) ; absent ou invalide : champ omis, l'ingestion applique `viral-video-agents` | aucun |
 | `VVA_TELEMETRY_FILE` | fichier JSONL | `$CLAUDE_PROJECT_DIR/.claude/telemetry/events.jsonl` |
 | `VVA_INGEST_URL` | URL complète de l'ingestion : `https`, ou `http` sur localhost/127.0.0.1/::1 seulement | requis pour `ship.py` |
 | `VVA_INGEST_TOKEN` | jeton Bearer (= `INGEST_TOKEN` du VPS) | requis pour `ship.py` |

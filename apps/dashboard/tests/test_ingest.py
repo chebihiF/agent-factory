@@ -358,3 +358,19 @@ def test_contract_project_default_and_examples() -> None:
     assert {"project" in e for e in examples} == {True, False}
     for example in examples:
         ingest.AgentEvent.model_validate_json(json.dumps(example))
+
+
+def test_init_schema_twice_on_old_database_is_idempotent(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(OLD_EVENTS_TABLE)
+        db.init_schema(conn)
+        db.init_schema(conn)  # colonne déjà là (ou ajoutée par un autre processus)
+        columns = [c[1] for c in conn.execute("PRAGMA table_info(events)")]
+        rows = conn.execute("SELECT event_id, project FROM events").fetchall()
+    assert columns.count("project") == 1
+    assert rows == [("old-1", ingest.DEFAULT_PROJECT)]
+
+
+def test_migration_reraises_other_sqlite_errors(tmp_path: Path) -> None:
+    with sqlite3.connect(tmp_path / "vide.db") as conn, pytest.raises(sqlite3.OperationalError):
+        db.add_project_column(conn)  # pas de table events : erreur autre que « duplicate column »

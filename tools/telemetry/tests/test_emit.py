@@ -239,3 +239,13 @@ def test_invalid_project_is_omitted(tmp_path: Path, value: str) -> None:
     [line] = lines(target)
     assert "project" not in line
     assert ingest.AgentEvent.model_validate_json(json.dumps(line)).project == "viral-video-agents"
+
+
+# #68 : le gabarit des hooks de A déclare son projet
+def test_settings_template_sets_project() -> None:
+    template = SCHEMA_PATH.parents[1] / "hooks" / "settings.example.json"
+    env = json.loads(template.read_text(encoding="utf-8"))["env"]
+    assert env["VVA_PROJECT"] == "agent-factory"
+    payload = {"event_id": "e", "ts": "2026-11-20T10:00:00+00:00", "hook_event_name": "Stop"}
+    event = payload | {"session_id": "s", "project": env["VVA_PROJECT"]}
+    assert ingest.AgentEvent.model_validate_json(json.dumps(event)).project == "agent-factory"

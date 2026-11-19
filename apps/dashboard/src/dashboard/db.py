@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS events (
     agent_type      TEXT,
     agent_id        TEXT,
     tool_name       TEXT,
-    project         TEXT NOT NULL DEFAULT 'viral-video-agents',
     received_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts);
@@ -74,7 +73,7 @@ def _insert_sql(table: str, columns: Sequence[str]) -> str:
 
 
 _INSERT = _insert_sql("events", EVENT_COLUMNS)
-_ADD_PROJECT = "ALTER TABLE events ADD COLUMN project TEXT NOT NULL DEFAULT 'viral-video-agents'"
+_ADD_PROJECT = f"ALTER TABLE events ADD COLUMN project TEXT NOT NULL DEFAULT '{DEFAULT_PROJECT}'"
 _INSERT_TOKENS = _insert_sql("token_usage", TOKEN_COLUMNS)
 
 
@@ -87,19 +86,24 @@ def db_path() -> Path:
     return Path(os.environ.get("VVA_DB_PATH") or DEFAULT_DB_PATH)
 
 
-def _migrate_events(conn: sqlite3.Connection) -> None:
-    """Ajoute `project` à une table `events` antérieure au #68 (anciennes lignes : défaut)."""
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
-    if "project" not in columns:
+def add_project_column(conn: sqlite3.Connection) -> None:
+    """Colonne `project` (#68), seule définition : base neuve ou antérieure (lignes : défaut).
+
+    Idempotent : « duplicate column » (déjà là, ou ajoutée par un autre processus) est ignoré.
+    """
+    try:
         with conn:
             conn.execute(_ADD_PROJECT)
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc):
+            raise
     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_project ON events (project)")
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
-    _migrate_events(conn)
+    add_project_column(conn)
 
 
 def _ensure_schema(conn: sqlite3.Connection, path: Path) -> None:
