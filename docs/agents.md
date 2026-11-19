@@ -1,3 +1,35 @@
+# Installer les agents dans un projet (#71)
+
+Les agents, skills, hooks et règles de l'usine vivent ici (`agents/`, `skills/`, `hooks/`,
+`rules/`). Un projet les utilise **sans les commiter** : ils sont copiés dans son `.claude/`
+local.
+
+```sh
+make install-agents PROJECT=../mon-projet                        # = scripts/install_agents.py ../mon-projet
+make install-agents PROJECT=../mon-projet OVERLAY=surcouche.md   # avec la partie propre au projet
+```
+
+Ce que fait la commande (stdlib, Python 3.9 ou 3.12) :
+
+| Étape | Détail |
+|-------|--------|
+| Contrôle | refuse une cible inexistante, hors dépôt git, ou qui n'est pas la racine du dépôt |
+| Exclusion | ajoute `.claude/` et `CLAUDE.md` à `<cible>/.git/info/exclude` (avant toute copie, sans doublon, contenu existant conservé ; fonctionne dans un worktree) |
+| Copie | `agents/`, `skills/`, `hooks/`, `rules/` vers `<cible>/.claude/<même nom>/` |
+| Surcouche | `--overlay <fichier>` : le fichier est inséré dans un bloc balisé `agent-factory:overlay` de `<cible>/CLAUDE.md` (créé si absent) |
+| Git | aucun `git add`, aucun commit dans la cible |
+
+- **Idempotente** : relancer met à jour les fichiers de l'usine (ils écrasent la version locale) ;
+  les fichiers propres au projet (`settings.json`, un agent maison, le reste de `CLAUDE.md`) ne
+  sont jamais touchés ni supprimés. Le bloc de surcouche est remplacé, pas dupliqué.
+- **Surcouche** : tout ce qui est propre au projet (machines, chemins, dépôt, règles produit)
+  va dans un fichier du projet, hors de l'usine. Aucun secret dedans : `CLAUDE.md` reste local,
+  mais la surcouche peut être copiée par erreur ailleurs.
+- `rules/tech-lead.md` est installé dans `.claude/rules/` ; le `CLAUDE.md` du projet y renvoie
+  ou le recopie (la surcouche s'y ajoute).
+- Le câblage des hooks (`.claude/settings.json`) reste manuel : gabarit `hooks/settings.example.json`.
+- Vérification : `git -C <cible> status --porcelain` ne montre rien, `git -C <cible> ls-files .claude CLAUDE.md` est vide.
+
 # Agents : mesure des tokens et routage des modèles (#19)
 
 Outils : `tools/agents/bin/token-report.sh` (enveloppe) et `tools/agents/token_report.py`
