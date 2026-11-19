@@ -9,10 +9,17 @@
 - `.github/workflows/ci.yml`
 - `.github/workflows/release.yml` — release
 - `.gitignore`
-- `.gitleaksignore` — Faux positifs : secrets factices des tests de refus de note (#83), déjà fragmentés dans le
 - `.python-version`
 - `Makefile` — Cibles silencieuses : n'affichent que les échecs (économie de tokens).
-- `README.md` — viral-video-agents
+- `README.md` — agent-factory
+- `agents/ai-engineer.md` — ai-engineer
+- `agents/dev-backend.md` — dev-backend
+- `agents/devops.md` — devops
+- `agents/product-owner.md` — product-owner
+- `agents/qa.md` — QA. Vérifie un ticket contre ses critères Gherkin, écrit les tests manquants, joue les scé
+- `agents/reviewer.md` — reviewer
+- `agents/scout.md` — scout
+- `agents/ux-designer.md` — ux-designer
 - `apps/dashboard/Dockerfile`
 - `apps/dashboard/pyproject.toml`
 - `apps/dashboard/src/dashboard/__init__.py` — Agents Dashboard.
@@ -40,7 +47,6 @@
 - `apps/dashboard/src/dashboard/tokens.py` — Totaux de tokens par agent et par modèle, sur 24 h et 7 jours glissants.
 - `apps/dashboard/tests/test_activity.py` — Liste d'activité des agents (#5) : 100 derniers événements, vues tableau + flux.
 - `apps/dashboard/tests/test_auth.py` — Connexion au dashboard (#5) : mot de passe, cookie de session signé, limitation.
-- `apps/dashboard/tests/test_contracts_storyboard.py` — Contrat contracts/storyboard.schema.json : sortie du conteur, entrée du pipeline (#31).
 - `apps/dashboard/tests/test_controls.py` — Contrôles pause et plafond de tokens (#8) : /controls, POST protégés (CSRF), /api/v1/contr
 - `apps/dashboard/tests/test_ensure_token.py` — Le script de déploiement crée le jeton d'ingestion une seule fois, en 600.
 - `apps/dashboard/tests/test_ingest.py` — Ingestion authentifiée des événements d'agents (#3).
@@ -50,51 +56,15 @@
 - `apps/dashboard/tests/test_progress.py` — Suivi visuel du projet (#26) : /progress et /api/v1/progress. GitHub est toujours mocké.
 - `apps/dashboard/tests/test_stream.py` — Flux SSE /stream (#6) : session exigée, id croissant, reprise par Last-Event-ID.
 - `apps/dashboard/tests/test_tokens.py` — Page /tokens : totaux par agent et par modèle sur 24 h et 7 jours (#7).
-- `apps/gpu-worker/README.md` — gpu-worker
-- `apps/gpu-worker/comfy_run.py` — Lance un workflow ComfyUI (format API) et attend le résultat.
-- `apps/gpu-worker/tests/test_worker.py` — gpu-worker (#33) : jobs image -> clip, ComfyUI simulé (aucun appel réseau vers le PC GPU).
-- `apps/gpu-worker/worker.py` — Service de jobs image -> clip (Wan 2.2) appelé par n8n (contrat : contracts/gpu-job.schema
-- `apps/media-service/README.md` — media-service
-- `apps/media-service/pyproject.toml`
-- `apps/media-service/src/media_service/__init__.py` — media-service : montage FFmpeg des vidéos générées.
-- `apps/media-service/src/media_service/montage.py` — Montage FFmpeg minimal : concat des clips, voix off AAC, sous-titres SRT incrustés.
-- `apps/media-service/src/media_service/subtitles.py` — Sous-titres ASS mot par mot : calcul pur à partir du texte et de la durée de chaque plan.
-- `apps/media-service/src/media_service/tts.py` — Voix off par plan avec Piper (CPU) : un WAV et sa durée par plan.
-- `apps/media-service/tests/__init__.py`
-- `apps/media-service/tests/test_contract_montage_job.py` — Contrat contracts/montage-job.schema.json : entrée du media-service (#34).
-- `apps/media-service/tests/test_montage.py` — Montage FFmpeg (#34) : clips et voix synthétiques générés par le test (lavfi).
-- `apps/media-service/tests/test_montage_edge_cases.py` — Cas limites du montage (#34) : unicode arabe, plan unique, 0 plan, double exécution.
-- `apps/media-service/tests/test_subtitles.py` — Sous-titres ASS mot par mot (#52) : calcul pur, sans ffmpeg.
-- `apps/media-service/tests/test_tts.py` — TTS Piper (#51) : faux binaire Piper (WAV silencieux de durée connue), aucun texte loggé.
-- `comfyui/workflows/flux_schnell_t2i_api.json` — données JSON
-- `comfyui/workflows/infinitetalk_single_api.json` — données JSON
-- `comfyui/workflows/wan22_5b_i2v_api.json` — données JSON
 - `contracts/README.md` — contracts
 - `contracts/agent-event.schema.json` — données JSON
 - `contracts/agents-journal.schema.json` — données JSON
-- `contracts/classification.schema.json` — données JSON
 - `contracts/control-api.md` — Contrôles : pause des agents et plafond de tokens (#8)
 - `contracts/dashboard-routes.md` — Routes du dashboard
-- `contracts/examples/classification.adouci.json` — données JSON
-- `contracts/examples/classification.bloque.json` — données JSON
-- `contracts/examples/classification.libre.json` — données JSON
-- `contracts/examples/gpu-job.invalid.json` — données JSON
-- `contracts/examples/gpu-job.valid.json` — données JSON
-- `contracts/examples/montage-job.subtitles.json` — données JSON
-- `contracts/examples/montage-job.valid.json` — données JSON
-- `contracts/examples/storyboard.invalid.json` — données JSON
-- `contracts/examples/storyboard.valid.json` — données JSON
-- `contracts/examples/tts-job.json` — données JSON
-- `contracts/gpu-job.schema.json` — données JSON
 - `contracts/ingest-api.md` — API d'ingestion des événements d'agents
-- `contracts/montage-job.schema.json` — données JSON
 - `contracts/progress.schema.json` — données JSON
-- `contracts/storyboard.schema.json` — données JSON
 - `contracts/token-usage.md` — Métriques de tokens (OTLP/HTTP JSON)
-- `contracts/tts-job.schema.json` — données JSON
-- `docs/ARCHITECTURE.md` — Architecture — Viral Video Agents
 - `docs/SCRUM.md` — Scrum — fonctionnement de l'équipe (humain + agents)
-- `docs/adr/ADR-001-architecture.md` — ADR-001 — Architecture générale
 - `docs/adr/ADR-002-stack-dashboard.md` — ADR-002 — Stack du dashboard (et des services Python)
 - `docs/adr/ADR-003-memoire-agents.md` — ADR-003 — Mémoire des agents : mémoire locale vs ADR
 - `docs/adr/ADR-004-separation-usine-produit.md` — ADR-004 — Séparer l'usine d'agents (A) et l'application vidéo (B)
@@ -103,17 +73,10 @@
 - `docs/design/README.md` — Design system du dashboard
 - `docs/design/activity.md` — Écran « Activité des agents »
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
-- `evals/README.md` — evals
-- `evals/cases/classification.jsonl`
-- `evals/cases/classification.recorded.jsonl`
-- `evals/cases/storyboard.jsonl`
-- `evals/cases/storyboard.recorded.jsonl`
-- `evals/cases/storyboard.test.schema.json` — données JSON
-- `evals/classification_eval.py` — Éval de la classification de sécurité enfant (libre / adouci / bloque).
-- `evals/darija_storyboard.py` — Test : Qwen3 comprend-il une scène dictée en darija et la transforme-t-il en storyboard ?
-- `evals/storyboard_eval.py` — Éval du prompt storyboard : taux de sorties JSON conformes à contracts/storyboard.schema.j
-- `evals/test_classification_eval.py` — Tests hors GPU de l'éval de classification (#35) : contrat, cas, dry-run, seuils.
-- `evals/test_storyboard_eval.py` — Tests de l'éval storyboard : jamais d'appel Ollama (réseau bloqué).
+- `hooks/lint_file.sh` — PostToolUse(Edit|Write) : corrige puis vérifie le fichier Python modifié. Silencieux si OK
+- `hooks/log_event.sh` — SubagentStart/SubagentStop/PostToolUse : journal JSONL local, source du dashboard (Sprint 
+- `hooks/quick_tests.sh` — Stop : lint + tests rapides ; renvoie les échecs à Claude (exit 2), une seule relance.
+- `hooks/settings.example.json` — données JSON
 - `infra/deploy/compose.yaml` — Dashboard en prod sur le VPS, derrière le reverse proxy existant (Traefik de n8n).
 - `infra/deploy/deploy.sh` — Déploie le dashboard sans coupure (blue/green derrière Traefik), vérifie /healthz en HTTPS
 - `infra/deploy/ensure-token.sh` — Crée $STATE_DIR/ingest_token (600) s'il n'existe pas, sans jamais l'afficher.
@@ -133,11 +96,11 @@
 - `infra/scripts/test_no_claude_tracked.py` — Garde-fou : aucun chemin .claude/ ni CLAUDE.md ne doit être suivi par git.
 - `infra/scripts/test_pool.py` — pool.sh : un ticket = une branche sur un poste libre du pool (#14).
 - `infra/scripts/test_set_dashboard_password.py` — set-dashboard-password.sh (#30) : hash vérifiable, mot de passe jamais écrit ni affiché.
-- `n8n/workflows/README.md` — n8n workflows
-- `prompts/README.md` — prompts
-- `prompts/classification.v1.md` — classification.v1
-- `prompts/storyboard.v1.md`
 - `pyproject.toml`
+- `rules/tech-lead.md` — Consignes génériques du tech lead (à recopier dans le fichier de consignes local du projet
+- `skills/deploy-check/SKILL.md` — deploy-check
+- `skills/sprint/SKILL.md` — sprint
+- `skills/ticket/SKILL.md` — ticket
 - `tools/agents/bin/handoff.sh` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/bin/token-report.sh` — Tokens par ticket, agent et modèle, ≤ 15 lignes, compteurs seuls (#19). Voir docs/agents.m
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report

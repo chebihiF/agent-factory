@@ -8,14 +8,14 @@
 # Configuration (surchargeable, utile pour les tests) :
 #   VVA_SSH          commande ssh                 (défaut : ssh)
 #   VVA_SSH_KEY      clé privée                   (défaut : ~/.ssh/vva_vps_ed25519)
-#   VVA_SSH_TARGET   utilisateur@hôte             (défaut : root@example.com)
+#   VVA_SSH_TARGET   utilisateur@hôte du VPS      (obligatoire, ex. root@vps.example.com)
 #   VVA_REMOTE_FILE  fichier du hash sur le VPS   (défaut : /opt/vva/dashboard_password_hash)
 #   VVA_REMOTE_OWNER propriétaire du fichier      (défaut : gha-runner)
 set -euo pipefail
 
 SSH="${VVA_SSH:-ssh}"
 KEY="${VVA_SSH_KEY:-$HOME/.ssh/vva_vps_ed25519}"
-TARGET="${VVA_SSH_TARGET:-root@example.com}"
+TARGET="${VVA_SSH_TARGET:?VVA_SSH_TARGET obligatoire (utilisateur@hôte du VPS)}"
 REMOTE_FILE="${VVA_REMOTE_FILE:-/opt/vva/dashboard_password_hash}"
 OWNER="${VVA_REMOTE_OWNER:-gha-runner}"
 MIN_LEN=10

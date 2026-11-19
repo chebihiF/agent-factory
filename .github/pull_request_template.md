@@ -9,4 +9,4 @@ Closes #
 - [ ] Critères d'acceptation couverts par des tests
 - [ ] `make check` vert
 - [ ] Docs / ADR / contrats à jour, `make map` lancé
-- [ ] Aucun secret ni donnée d'enfant
+- [ ] Aucun secret ni donnée personnelle

@@ -51,8 +51,8 @@ def subagent_start() -> dict[str, Any]:
         "session_id": "sess-1",
         "agent_type": "dev-backend",
         "agent_id": "agent-42",
-        "transcript_path": "/Users/x/.claude/projects/t.jsonl",
-        "cwd": "/Users/x/dev",
+        "transcript_path": "/home/x/.claude/projects/t.jsonl",
+        "cwd": "/home/x/dev",
     }
 
 

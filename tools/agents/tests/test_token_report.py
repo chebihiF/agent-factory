@@ -22,7 +22,7 @@ AGENTS = Path(__file__).resolve().parents[1]
 REPO = AGENTS.parents[1]
 ROUTING = AGENTS / "config" / "model-routing.yml"
 SCRIPT = AGENTS / "bin" / "token-report.sh"
-SECRET = "Voici mon prompt : lis /Users/x/secret.txt"  # noqa: S105 - faux contenu
+SECRET = "Voici mon prompt : lis /home/x/secret.txt"  # noqa: S105 - faux contenu
 
 
 def _db(path: Path, points: Sequence[tuple[str, str | None, str, int]]) -> Path:

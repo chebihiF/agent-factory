@@ -11,8 +11,8 @@ contributeurs externes exigent une approbation manuelle.
    `/opt/vva/proxy.env` d'après `infra/deploy/proxy.env.example`.
 3. En tant que `gha-runner`, télécharger le runner officiel (github.com/actions/runner/releases),
    vérifier le SHA-256, puis
-   `./config.sh --url https://github.com/chebihiF/viral-video-agents --token <jeton d'inscription> --name vps --labels vps-deploy --unattended`
-   (jeton : `gh api -X POST repos/chebihiF/viral-video-agents/actions/runners/registration-token -q .token`, valable 1 h).
+   `./config.sh --url https://github.com/chebihiF/agent-factory --token <jeton d'inscription> --name vps --labels vps-deploy --unattended`
+   (jeton : `gh api -X POST repos/chebihiF/agent-factory/actions/runners/registration-token -q .token`, valable 1 h).
 4. Service : `sudo ./svc.sh install gha-runner && sudo ./svc.sh start`.
 
 ## Retour arrière

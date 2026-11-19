@@ -1,20 +1,18 @@
 [project]
-name = "viral-video-agents"
+name = "agent-factory"
 version = "0.0.0"
-description = "Monorepo — appli familiale de vidéos animées générées par IA open source"
+description = "Usine d'agents : rôles, skills, hooks, télémétrie et dashboard de pilotage"
 requires-python = ">=3.12"
 
 [tool.uv.workspace]
-members = ["apps/dashboard", "apps/media-service"]
+members = ["apps/dashboard"]
 
 [tool.uv.sources]
 dashboard = { workspace = true }
-media-service = { workspace = true }
 
 [dependency-groups]
 dev = [
   "dashboard",
-  "media-service",
   "ruff>=0.8",
   "mypy>=1.13",
   "pytest>=8.3",
@@ -28,29 +26,20 @@ line-length = 100
 target-version = "py312"
 extend-exclude = ["scripts", "workflows"]
 
-[tool.ruff.format]
-# Scripts GPU/évals encore édités sur le PC : formatage différé
-exclude = ["apps/gpu-worker/*", "evals/*"]
-
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
 ignore = ["S101"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["dashboard", "media_service", "next_version", "hook_emit", "ship", "token_report"]
-
-[tool.ruff.lint.per-file-ignores]
-"apps/gpu-worker/*" = ["S310", "S110", "E501"]
-"evals/*" = ["S310", "T201", "E501"]
+known-first-party = ["dashboard", "next_version", "hook_emit", "ship", "token_report"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["apps/dashboard/src", "apps/media-service/src", "infra/scripts", "tools/telemetry", "tools/agents", "evals/classification_eval.py", "evals/test_classification_eval.py",
-  "apps/gpu-worker/worker.py", "apps/gpu-worker/comfy_run.py"]
+files = ["apps/dashboard/src", "infra/scripts", "tools/telemetry", "tools/agents"]
 
 [tool.pytest.ini_options]
-testpaths = ["apps/dashboard/tests", "apps/media-service/tests", "infra/scripts", "tools/telemetry/tests", "tools/agents/tests", "evals", "apps/gpu-worker/tests"]
-pythonpath = ["infra/scripts", "tools/telemetry", "tools/agents", "evals", "apps/gpu-worker"]
+testpaths = ["apps/dashboard/tests", "infra/scripts", "tools/telemetry/tests", "tools/agents/tests"]
+pythonpath = ["infra/scripts", "tools/telemetry", "tools/agents"]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = "-q --no-header -p no:cacheprovider"
