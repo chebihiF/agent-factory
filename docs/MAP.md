@@ -98,6 +98,8 @@
 - `infra/scripts/test_set_dashboard_password.py` — set-dashboard-password.sh (#30) : hash vérifiable, mot de passe jamais écrit ni affiché.
 - `pyproject.toml`
 - `rules/tech-lead.md` — Consignes génériques du tech lead (à recopier dans le fichier de consignes local du projet
+- `scripts/install_agents.py` — Installe agents, skills, hooks et règles de l'usine dans le `.claude/` local d'un projet.
+- `scripts/test_install_agents.py` — install_agents.py : installation locale des agents, skills et hooks dans un projet cible.
 - `skills/deploy-check/SKILL.md` — deploy-check
 - `skills/sprint/SKILL.md` — sprint
 - `skills/ticket/SKILL.md` — ticket

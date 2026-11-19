@@ -17,13 +17,15 @@ Stdlib seule, compatible Python 3.9 (poste du parent) comme 3.12.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 SOURCE_DIRS = ("agents", "skills", "hooks", "rules")
 EXCLUDE_ENTRIES = (".claude/", "CLAUDE.md")
+MANIFEST = ".agent-factory-manifest"
 OVERLAY_BEGIN = "<!-- agent-factory:overlay:begin -->"
 OVERLAY_END = "<!-- agent-factory:overlay:end -->"
 FACTORY_ROOT = Path(__file__).resolve().parents[1]
@@ -41,18 +43,28 @@ def _git(target: Path, *args: str) -> str:
             text=True,
             check=True,
         )
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except OSError as exc:
+        raise InstallError("git est introuvable (à installer ou à mettre dans le PATH)") from exc
+    except subprocess.CalledProcessError as exc:
         raise InstallError(f"{target} n'est pas un dépôt git") from exc
     return proc.stdout.strip()
 
 
 def check_target(target: Path) -> Path:
-    """Renvoie le chemin de `info/exclude` ; refuse tout ce qui n'est pas la racine d'un dépôt."""
+    """Renvoie le chemin de `info/exclude` ; refuse tout ce qui n'est pas sûr."""
     if not target.is_dir():
         raise InstallError(f"cible introuvable : {target}")
     top = Path(_git(target, "rev-parse", "--show-toplevel"))
     if top.resolve() != target.resolve():
         raise InstallError(f"{target} n'est pas la racine d'un dépôt git ({top})")
+    tracked = _git(target, "ls-files", "--", ".claude", "CLAUDE.md")
+    if tracked:
+        raise InstallError(
+            f"fichiers Claude suivis par git, à retirer de l'index d'abord :\n{tracked}"
+        )
+    for name in (".claude", "CLAUDE.md"):
+        if (target / name).is_symlink():
+            raise InstallError(f"{target / name} est un lien symbolique")
     exclude = Path(_git(target, "rev-parse", "--git-path", "info/exclude"))
     return exclude if exclude.is_absolute() else target / exclude
 
@@ -67,32 +79,85 @@ def ensure_excluded(exclude: Path) -> None:
         exclude.write_text(text + sep + "\n".join(missing) + "\n", encoding="utf-8")
 
 
-def copy_sources(src: Path, claude: Path) -> int:
-    """Copie chaque dossier source présent ; renvoie le nombre de fichiers copiés."""
-    count = 0
+def source_files(src: Path) -> list[str]:
+    """Chemins relatifs (posix, triés) des fichiers à installer ; liens symboliques ignorés."""
+    found: list[str] = []
     for name in SOURCE_DIRS:
-        if not (src / name).is_dir():
+        root = src / name
+        if root.is_symlink() or not root.is_dir():
             continue
-        for f in sorted((src / name).rglob("*")):
-            if not f.is_file() or "__pycache__" in f.parts:
-                continue
-            dest = claude / name / f.relative_to(src / name)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(f, dest)
-            count += 1
-    return count
+        for base, dirs, files in os.walk(root, followlinks=False):
+            dirs[:] = [d for d in dirs if d != "__pycache__" and not Path(base, d).is_symlink()]
+            found += [
+                Path(base, f).relative_to(src).as_posix()
+                for f in files
+                if not Path(base, f).is_symlink()
+            ]
+    return sorted(found)
 
 
-def apply_overlay(overlay: Path, claude_md: Path) -> None:
-    block = f"{OVERLAY_BEGIN}\n{overlay.read_text(encoding='utf-8').rstrip()}\n{OVERLAY_END}\n"
+def safe_dest(claude: Path, rel: str) -> Path:
+    """Destination sous `claude`, sans lien symbolique (fichier ou dossier parent)."""
+    dest = claude / rel
+    probe = dest
+    while probe != claude:
+        if probe.is_symlink():
+            raise InstallError(f"{probe} est un lien symbolique")
+        probe = probe.parent
+    if not dest.resolve().is_relative_to(claude.resolve()):
+        raise InstallError(f"{dest} sort de {claude}")
+    return dest
+
+
+def copy_sources(src: Path, claude: Path, files: list[str]) -> None:
+    dests = {rel: safe_dest(claude, rel) for rel in files}  # tout valider avant d'écrire
+    for rel, dest in dests.items():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src / rel, dest)
+
+
+def _listed(manifest: Path) -> list[str]:
+    """Entrées du manifeste précédent, limitées à `<dossier source>/…` sans `..`."""
+    if not manifest.is_file():
+        return []
+    entries = manifest.read_text(encoding="utf-8").splitlines()
+    return [e for e in entries if _in_scope(e)]
+
+
+def _in_scope(entry: str) -> bool:
+    parts = PurePosixPath(entry).parts
+    return len(parts) >= 2 and parts[0] in SOURCE_DIRS and ".." not in parts and entry[0] != "/"
+
+
+def prune(claude: Path, previous: list[str], current: list[str]) -> None:
+    """Retire les fichiers installés avant et absents maintenant (jamais les fichiers du projet)."""
+    for rel in sorted(set(previous) - set(current)):
+        try:
+            dest = safe_dest(claude, rel)
+        except InstallError:
+            continue
+        if not dest.is_file():
+            continue
+        dest.unlink()
+        parent = dest.parent
+        while parent != claude and not any(parent.iterdir()):
+            parent.rmdir()
+            parent = parent.parent
+
+
+def render_overlay(overlay: Path, claude_md: Path) -> str:
+    body = overlay.read_text(encoding="utf-8").rstrip()
+    if OVERLAY_BEGIN in body or OVERLAY_END in body:
+        raise InstallError(f"la surcouche {overlay} contient les marqueurs réservés")
+    block = f"{OVERLAY_BEGIN}\n{body}\n{OVERLAY_END}\n"
     text = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
-    begin, end = text.find(OVERLAY_BEGIN), text.find(OVERLAY_END)
-    if begin != -1 and end > begin:
-        tail = text[end + len(OVERLAY_END) :].lstrip("\n")
-        text = text[:begin] + block + tail
-    else:
-        text = text + ("\n" if text and not text.endswith("\n") else "") + block
-    claude_md.write_text(text, encoding="utf-8")
+    begin = text.find(OVERLAY_BEGIN)
+    if begin == -1:
+        return text + ("\n" if text and not text.endswith("\n") else "") + block
+    end = text.find(OVERLAY_END, begin)
+    if end == -1:
+        raise InstallError(f"{claude_md} : bloc de surcouche sans marqueur de fin, à réparer")
+    return text[:begin] + block + text[end + len(OVERLAY_END) :].lstrip("\n")
 
 
 def install(src: Path, target: Path, overlay: Path | None = None) -> int:
@@ -100,11 +165,18 @@ def install(src: Path, target: Path, overlay: Path | None = None) -> int:
     if overlay is not None and not overlay.is_file():
         raise InstallError(f"surcouche introuvable : {overlay}")
     exclude = check_target(target)
-    ensure_excluded(exclude)  # d'abord : aucun fichier Claude ne peut être vu par git
-    count = copy_sources(src, target / ".claude")
-    if overlay is not None:
-        apply_overlay(overlay, target / "CLAUDE.md")
-    return count
+    claude = target / ".claude"
+    files = source_files(src)
+    claude_md = render_overlay(overlay, target / "CLAUDE.md") if overlay else None
+    ensure_excluded(exclude)  # avant toute écriture : aucun fichier Claude visible par git
+    previous = _listed(claude / MANIFEST)
+    copy_sources(src, claude, files)
+    prune(claude, previous, files)
+    if files:
+        (claude / MANIFEST).write_text("\n".join(files) + "\n", encoding="utf-8")
+    if claude_md is not None:
+        (target / "CLAUDE.md").write_text(claude_md, encoding="utf-8")
+    return len(files)
 
 
 def main(argv: list[str] | None = None) -> int:

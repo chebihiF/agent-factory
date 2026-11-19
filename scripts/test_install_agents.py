@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -178,3 +179,174 @@ def test_installe_aussi_depuis_un_autre_source(target: Path, tmp_path: Path) -> 
     assert ia.install(src, target) == 1
     assert (target / ".claude" / "agents" / "x.md").read_text() == "x\n"
     assert not (target / ".claude" / "skills").exists()
+
+
+def make_src(root: Path, files: dict[str, str]) -> Path:
+    for rel, content in files.items():
+        f = root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(content)
+    return root
+
+
+# (1) fichiers Claude déjà suivis par git dans la cible
+
+
+@pytest.mark.parametrize("tracked", ["CLAUDE.md", ".claude/agents/qa.md"])
+def test_refuse_si_fichier_claude_suivi(target: Path, tracked: str) -> None:
+    f = target / tracked
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("x\n")
+    git("add", "-f", tracked, cwd=target)
+    before = (target / ".git" / "info" / "exclude").read_text()
+    assert ia.main([str(target)]) != 0
+    assert (target / ".git" / "info" / "exclude").read_text() == before
+    assert not (target / ".claude" / "skills").exists()
+
+
+# (2) liens symboliques
+
+
+def test_refuse_claude_lien_symbolique(target: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "dehors"
+    outside.mkdir()
+    (target / ".claude").symlink_to(outside)
+    assert ia.main([str(target)]) != 0
+    assert list(outside.iterdir()) == []
+
+
+def test_refuse_sous_dossier_lien_symbolique(target: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "dehors"
+    outside.mkdir()
+    (target / ".claude").mkdir()
+    (target / ".claude" / "agents").symlink_to(outside)
+    assert ia.main([str(target)]) != 0
+    assert list(outside.iterdir()) == []
+
+
+def test_refuse_fichier_destination_lien_symbolique(target: Path, tmp_path: Path) -> None:
+    victim = tmp_path / "victime.txt"
+    victim.write_text("intact\n")
+    (target / ".claude" / "agents").mkdir(parents=True)
+    (target / ".claude" / "agents" / "qa.md").symlink_to(victim)
+    assert ia.main([str(target)]) != 0
+    assert victim.read_text() == "intact\n"
+
+
+def test_refuse_claude_md_lien_symbolique(target: Path, tmp_path: Path) -> None:
+    victim = tmp_path / "victime.md"
+    victim.write_text("intact\n")
+    (target / "CLAUDE.md").symlink_to(victim)
+    overlay = tmp_path / "o.md"
+    overlay.write_text("x\n")
+    assert ia.main([str(target), "--overlay", str(overlay)]) != 0
+    assert victim.read_text() == "intact\n"
+
+
+def test_ignore_les_liens_symboliques_cote_source(target: Path, tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("secret\n")
+    other = tmp_path / "autre"
+    make_src(other, {"x.md": "x\n"})
+    src = make_src(tmp_path / "src", {"agents/ok.md": "ok\n"})
+    (src / "agents" / "lien.md").symlink_to(secret)
+    (src / "skills").symlink_to(other)
+    assert ia.install(src, target) == 1
+    assert [p.name for p in (target / ".claude" / "agents").iterdir()] == ["ok.md"]
+    assert not (target / ".claude" / "skills").exists()
+
+
+# (3) marqueurs de surcouche
+
+
+def test_overlay_refuse_les_marqueurs(target: Path, tmp_path: Path) -> None:
+    for marker in (ia.OVERLAY_BEGIN, ia.OVERLAY_END):
+        overlay = tmp_path / "o.md"
+        overlay.write_text(f"texte\n{marker}\n")
+        assert ia.main([str(target), "--overlay", str(overlay)]) != 0
+    assert not (target / ".claude").exists()
+
+
+def test_overlay_fin_avant_debut_ne_tronque_pas(target: Path, tmp_path: Path) -> None:
+    overlay = tmp_path / "o.md"
+    overlay.write_text("surcouche\n")
+    (target / "CLAUDE.md").write_text(f"{ia.OVERLAY_END}\nperso\n")
+    assert ia.main([str(target), "--overlay", str(overlay)]) == 0
+    text = (target / "CLAUDE.md").read_text()
+    assert text.startswith(f"{ia.OVERLAY_END}\nperso\n")
+    assert "surcouche" in text
+
+
+def test_overlay_bloc_existant_sans_fin_refuse(target: Path, tmp_path: Path) -> None:
+    overlay = tmp_path / "o.md"
+    overlay.write_text("surcouche\n")
+    original = f"perso\n{ia.OVERLAY_BEGIN}\nreste\n"
+    (target / "CLAUDE.md").write_text(original)
+    assert ia.main([str(target), "--overlay", str(overlay)]) != 0
+    assert (target / "CLAUDE.md").read_text() == original
+
+
+# (4) manifeste
+
+
+def test_manifeste_retire_les_fichiers_disparus(target: Path, tmp_path: Path) -> None:
+    v1 = make_src(
+        tmp_path / "v1", {"agents/a.md": "a\n", "agents/b.md": "b\n", "skills/s/S.md": "s\n"}
+    )
+    v2 = make_src(tmp_path / "v2", {"agents/a.md": "a2\n"})
+    ia.install(v1, target)
+    claude = target / ".claude"
+    (claude / "agents" / "mien.md").write_text("mien\n")
+    (claude / "settings.json").write_text("{}\n")
+    ia.install(v2, target)
+    assert (claude / "agents" / "a.md").read_text() == "a2\n"
+    assert not (claude / "agents" / "b.md").exists()
+    assert not (claude / "skills").exists()  # dossier vidé retiré
+    assert (claude / "agents" / "mien.md").read_text() == "mien\n"
+    assert (claude / "settings.json").read_text() == "{}\n"
+    assert (claude / ia.MANIFEST).read_text().split() == ["agents/a.md"]
+
+
+def test_manifeste_ignore_les_entrees_hors_perimetre(target: Path, tmp_path: Path) -> None:
+    victim = tmp_path / "victime.txt"
+    victim.write_text("intact\n")
+    (target / ".claude").mkdir()
+    (target / ".claude" / "settings.json").write_text("{}\n")
+    (target / ".claude" / ia.MANIFEST).write_text(
+        "../../victime.txt\n/etc/passwd\nsettings.json\nagents/../settings.json\n"
+    )
+    ia.install(make_src(tmp_path / "src", {"agents/a.md": "a\n"}), target)
+    assert victim.read_text() == "intact\n"
+    assert (target / ".claude" / "settings.json").read_text() == "{}\n"
+
+
+def test_manifeste_present_apres_installation_reelle(target: Path) -> None:
+    ia.main([str(target)])
+    listed = (target / ".claude" / ia.MANIFEST).read_text().split()
+    assert "agents/qa.md" in listed
+    assert listed == sorted(listed)
+
+
+# (5) git absent
+
+
+def test_message_distinct_si_git_absent(
+    target: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert ia.main([str(target)]) != 0
+    err = capsys.readouterr().err
+    assert "git est introuvable" in err
+    assert "n'est pas un dépôt" not in err
+
+
+def test_script_executable_en_ligne_de_commande(target: Path) -> None:
+    script = ROOT / "scripts" / "install_agents.py"
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, str(script), str(target)], capture_output=True, text=True
+    )
+    assert done.returncode == 0
+    assert (target / ".claude" / "agents" / "qa.md").is_file()
