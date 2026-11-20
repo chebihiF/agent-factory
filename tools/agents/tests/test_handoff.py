@@ -146,7 +146,8 @@ def test_check_at_threshold_asks_for_the_note_once(
     hook = out["hookSpecificOutput"]
     assert hook["hookEventName"] == "UserPromptSubmit"
     context = hook["additionalContext"]
-    assert "150 000" in context and "relay" in context and "10 lignes" in context
+    assert "150 000" in context and "handoff.sh post" in context and "10 lignes" in context
+    assert "relay" not in context
     assert "atteint 150 010 tokens (seuil 150 000)" in context
     assert _main(["check"], stdin=_hook("s1", t)) == 0  # même session : une seule fois
     assert capsys.readouterr().out == ""

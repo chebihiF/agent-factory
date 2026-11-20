@@ -39,7 +39,7 @@ def test_passation_alignee_sur_83() -> None:
         assert ho._parser().parse_args([command, *_FILE[command]]).command == command
 
 
-_FILE = {"check": [], "post": ["--note-file", "n.md"], "relay": ["--note-file", "n.md"]}
+_FILE = {"check": [], "post": ["--note-file", "n.md"]}
 
 
 def _check(tmp_path: Path, capsys: pytest.CaptureFixture[str], tokens: int, *flags: str) -> str:
@@ -64,10 +64,10 @@ def test_seuil_reel_defaut_et_option(
 
 
 def test_releve_independante_sans_chaine() -> None:
-    text = _text()
+    text = " ".join(_text().split())
     assert "session indépendante, lancée par le parent humain" in text
-    assert "`start_session`\n  puis archivage immédiat de la sortante" in text
-    assert "Pas de chaîne parent/enfant\n  de sessions" in text
+    assert "`start_session` puis archivage immédiat de la sortante" in text
+    assert "Pas de chaîne parent/enfant de sessions (chaque rapport" in text
     assert "Un seul tech lead par brique" in text
     assert "sous-agents (outil Agent) restent autorisés" in text
     assert "relay" not in text.replace("pas de `handoff.sh relay`", "")
@@ -75,9 +75,16 @@ def test_releve_independante_sans_chaine() -> None:
 
 
 def test_archivage_sur_accord_explicite() -> None:
-    text = _text()
-    assert "sans être archivée" in text
-    assert "accord explicite du parent" in text
+    text = " ".join(_text().split())
+    assert "demander explicitement au parent l'accord d'archiver" in text
+    assert "elle reste ouverte, inactive, sans lancer ni attendre de session" in text
+    assert "accord explicite" in text
+
+
+def test_texte_du_hook_ne_pousse_pas_a_relay() -> None:
+    text = ho.request_text(ho.THRESHOLD, ho.THRESHOLD)
+    assert "relay" not in text
+    assert "handoff.sh post" in text and "session indépendante" in text
 
 
 def test_tech_lead_reference_la_regle() -> None:

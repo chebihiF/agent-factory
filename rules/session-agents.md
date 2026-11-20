@@ -24,7 +24,7 @@ Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
   `tools/agents/bin/handoff.sh post` (#83) : ni secret, ni donnée d'enfant ; il la poste dans #21.
 - La relève est une session indépendante, lancée par le parent humain ; à défaut, `start_session`
   puis archivage immédiat de la sortante (accord du parent, §3). Pas de chaîne parent/enfant
-  de sessions, pas de `handoff.sh relay` : chaque rapport de fin de tour réveille le parent.
+  de sessions (chaque rapport de fin de tour réveille le parent) ; donc pas de `handoff.sh relay`.
 - Un seul tech lead par brique. Les sous-agents (outil Agent) restent autorisés ; au seuil, un
   sous-agent s'arrête et rend à son appelant un rapport de passation (mêmes rubriques).
 - Rapports dans l'issue de suivi (#21) et les PR, pas dans des messages entre sessions.
@@ -32,6 +32,6 @@ Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
 
 ## 3. Archivage de l'ancienne session
 
-- La session sortante s'archive uniquement avec l'accord explicite du parent, donné pour cette
-  session ; sinon elle reste ouverte, sans être archivée.
-  Pas d'accord = pas d'archivage ; ne jamais le déduire d'un accord antérieur.
+- À la passation, demander explicitement au parent l'accord d'archiver la sortante.
+- Sans accord explicite, donné pour cette session : elle reste ouverte, inactive, sans lancer
+  ni attendre de session. Ne jamais déduire l'accord d'un accord antérieur.
