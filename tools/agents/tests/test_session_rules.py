@@ -70,6 +70,7 @@ def test_releve_independante_sans_chaine() -> None:
     assert "Pas de chaîne parent/enfant de sessions (chaque rapport" in text
     assert "Un seul tech lead par brique" in text
     assert "sous-agents (outil Agent) restent autorisés" in text
+    assert "la note via `handoff.sh latest`" in text
     assert "relay" not in text.replace("pas de `handoff.sh relay`", "")
     assert "pas dans des messages entre sessions" in text
 

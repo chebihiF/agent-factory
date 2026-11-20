@@ -22,6 +22,7 @@ Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
 - Au seuil, le tech lead (le hook ne mesure que le fil principal) écrit une
   note de 10 lignes maximum (fait / reste / fichiers clés / pièges), au format validé par
   `tools/agents/bin/handoff.sh post` (#83) : ni secret, ni donnée d'enfant ; il la poste dans #21.
+  La relève lit la note via `handoff.sh latest`.
 - La relève est une session indépendante, lancée par le parent humain ; à défaut, `start_session`
   puis archivage immédiat de la sortante (accord du parent, §3). Pas de chaîne parent/enfant
   de sessions (chaque rapport de fin de tour réveille le parent) ; donc pas de `handoff.sh relay`.
