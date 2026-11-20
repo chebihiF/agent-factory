@@ -1,6 +1,6 @@
 # Cibles silencieuses : n'affichent que les échecs (économie de tokens).
 .SILENT:
-.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall
+.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall install-agents
 
 UV := uv run -q
 SH := infra/scripts/quiet.sh
@@ -55,3 +55,7 @@ loop-install: ## Planifie la boucle autonome (launchd ; CONFIG=~/.vva/loop.yml p
 
 loop-uninstall: ## Retire la planification de la boucle autonome
 	tools/agents/bin/agent-loop.sh uninstall
+
+install-agents: ## Installe agents/skills/hooks dans un projet (PROJECT=<chemin> [OVERLAY=<fichier>])
+	test -n "$$PROJECT" || { echo "usage : make install-agents PROJECT=<chemin> [OVERLAY=<fichier>]" >&2; exit 2; }
+	python3 scripts/install_agents.py "$$PROJECT" $${OVERLAY:+--overlay "$$OVERLAY"}
