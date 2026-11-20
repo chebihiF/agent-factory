@@ -50,5 +50,5 @@ ticket: ## Ticket N sur un poste libre du pool (N=<n>, DRY=1 pour simuler)
 	infra/scripts/pool.sh $(if $(DRY),--dry-run) '$(N)'
 
 install-agents: ## Installe agents/skills/hooks dans un projet (PROJECT=<chemin> [OVERLAY=<fichier>])
-	test -n '$(PROJECT)' || { echo "usage : make install-agents PROJECT=<chemin> [OVERLAY=<fichier>]" >&2; exit 2; }
-	python3 scripts/install_agents.py '$(PROJECT)' $(if $(OVERLAY),--overlay '$(OVERLAY)')
+	test -n "$$PROJECT" || { echo "usage : make install-agents PROJECT=<chemin> [OVERLAY=<fichier>]" >&2; exit 2; }
+	python3 scripts/install_agents.py "$$PROJECT" $${OVERLAY:+--overlay "$$OVERLAY"}

@@ -169,11 +169,12 @@ def install(src: Path, target: Path, overlay: Path | None = None) -> int:
     files = source_files(src)
     claude_md = render_overlay(overlay, target / "CLAUDE.md") if overlay else None
     ensure_excluded(exclude)  # avant toute écriture : aucun fichier Claude visible par git
-    previous = _listed(claude / MANIFEST)
+    manifest = safe_dest(claude, MANIFEST)  # refuse un manifeste lien symbolique, avant écriture
+    previous = _listed(manifest)
     copy_sources(src, claude, files)
     prune(claude, previous, files)
     if files:
-        (claude / MANIFEST).write_text("\n".join(files) + "\n", encoding="utf-8")
+        manifest.write_text("\n".join(files) + "\n", encoding="utf-8")
     if claude_md is not None:
         (target / "CLAUDE.md").write_text(claude_md, encoding="utf-8")
     return len(files)

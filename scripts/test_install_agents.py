@@ -233,6 +233,16 @@ def test_refuse_fichier_destination_lien_symbolique(target: Path, tmp_path: Path
     assert victim.read_text() == "intact\n"
 
 
+def test_refuse_manifeste_lien_symbolique(target: Path, tmp_path: Path) -> None:
+    victim = tmp_path / "victime.txt"
+    victim.write_text("intact\n")
+    (target / ".claude").mkdir()
+    (target / ".claude" / ia.MANIFEST).symlink_to(victim)
+    assert ia.main([str(target)]) != 0
+    assert victim.read_text() == "intact\n"
+    assert not (target / ".claude" / "agents").exists()  # rien écrit
+
+
 def test_refuse_claude_md_lien_symbolique(target: Path, tmp_path: Path) -> None:
     victim = tmp_path / "victime.md"
     victim.write_text("intact\n")
