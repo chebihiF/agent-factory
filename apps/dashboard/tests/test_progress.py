@@ -142,12 +142,14 @@ def ago(**delta: float) -> str:
     return (datetime.now(UTC) - timedelta(**delta)).isoformat()
 
 
-def seed(*events: tuple[str, str, str, str, str | None]) -> None:
-    """(ts, hook, agent_type, agent_id, tool)."""
-    rows = [
-        (f"e{i}", ts, hook, "sess", agent, agent_id, tool, "viral-video-agents")
-        for i, (ts, hook, agent, agent_id, tool) in enumerate(events)
-    ]
+def seed(*events: tuple[Any, ...]) -> None:
+    """(ts, hook, agent_type, agent_id, tool[, issue[, model]])."""
+    rows = []
+    for i, event in enumerate(events):
+        issue_and_model = (*event[5:], None, None)[:2]
+        rows.append(
+            (f"e{i}", *event[:2], "sess", *event[2:5], "viral-video-agents", *issue_and_model)
+        )
     with db.connect() as conn:
         db.insert_events(conn, rows)
 
@@ -758,3 +760,25 @@ def test_each_bar_has_a_visible_text_line_with_matching_swatches(client: TestCli
     assert " ".join(line.split()) == "Livré 1 · Revue 1 · En cours 1 · Prêt 1 · Backlog 2"
     for key, _label in progress.STATUSES:
         assert f'class="swatch seg-{key}"' in row, key
+
+
+# #181 : ticket et modèle portés par les événements
+def test_agent_linked_to_a_ticket_shows_it(client: TestClient) -> None:
+    seed(
+        (ago(minutes=3), "SubagentStart", "dev-backend", "ag-1", None, 42, "claude-opus-5-5"),
+        (ago(seconds=10), "PreToolUse", "dev-backend", "ag-1", "Edit"),
+    )
+    (agent,) = api(client)["agents"]
+    assert agent["issue"] == 42
+    assert agent["model"] == "claude-opus-5-5"  # modèle de l'événement, pas celui du rôle
+    assert "<code>#42</code>" in client.get("/progress").text
+
+
+def test_agent_without_event_model_falls_back_to_role(client: TestClient) -> None:
+    seed((ago(seconds=10), "PreToolUse", "scout", "ag-2", "Read", None, None))
+    (agent,) = api(client)["agents"]
+    assert (agent["issue"], agent["model"]) == (None, "claude-haiku-5-5")
+
+
+def test_silence_delay_is_shared_with_interactions() -> None:
+    assert progress.STALE_AFTER == activity.SILENT_AFTER

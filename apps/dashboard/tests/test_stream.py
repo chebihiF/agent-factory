@@ -50,6 +50,8 @@ def seed(n: int, start: int = 0, **extra: Any) -> None:
             extra.get("agent_id", "agent-1"),
             extra.get("tool_name", "Bash"),
             extra.get("project", "viral-video-agents"),
+            extra.get("issue"),
+            extra.get("model"),
         )
         for i in range(start, start + n)
     ]
@@ -121,7 +123,15 @@ def test_message_has_increasing_id_and_json_payload(client: TestClient) -> None:
         "agent_id": "agent-1",
         "tool_name": "Bash",
         "project": "viral-video-agents",
+        "issue": None,
+        "model": None,
     }
+
+
+def test_payload_carries_issue_and_model(client: TestClient) -> None:
+    seed(1, issue=42, model="claude-opus-5-5")
+    [(_, payload)] = parse(read_stream(client, **{"Last-Event-ID": "0"}))
+    assert (payload["issue"], payload["model"]) == (42, "claude-opus-5-5")
 
 
 def test_payload_cannot_inject_extra_sse_fields(client: TestClient) -> None:

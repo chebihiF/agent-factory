@@ -97,7 +97,11 @@ décroissant ; nombre d'événements, première et dernière heure UTC) et, pour
 sous-agents. Un sous-agent = un `agent_id` : premier `SubagentStart` et dernier
 `SubagentStop` de la même session ; durée = `Stop - Start` (`2 min 02 s`, `12 s`,
 `< 1 s`, `1 h 02 min`), « — » sans `Start` ou sans `Stop` ; état « ○ En cours » /
-« ● Terminé ». États vide (« Aucune interaction pour l'instant ») et erreur
+« ● Terminé » ; un sous-agent démarré, sans `Stop` ni aucun événement de son `agent_id` depuis
+plus de **30 min** (`activity.SILENT_AFTER`) est « ◌ Terminé sans signal », jamais « En cours » (#181).
+Un `ts` illisible compte comme absence de signe de vie. Agrégation en SQL (`GROUP BY session_id,
+agent_id`, index `idx_events_session_agent`). Colonne « Modèle » : dernier `model` connu de ce
+sous-agent, « — » sinon (les hooks de sous-agents ne le fournissent pas toujours). États vide (« Aucune interaction pour l'instant ») et erreur
 (`role="alert"`, « Réessayer ») ; `no-store`. Même mise à jour en direct que `/activity`.
 
 ### `GET /stream`
@@ -109,7 +113,7 @@ redirection : un `EventSource` ne la suivrait pas).
 - `id:` = `rowid` croissant de la table `events` (ordre d'insertion ; la table ne doit
   jamais être compactée par `VACUUM`, qui renumérote) ;
 - `data:` = JSON sur une ligne : `event_id`, `ts`, `time_label` (UTC), `hook_event_name`,
-  `agent_type`, `agent_id`, `tool_name` (`null` si absent), `project` (#68) ; ni `session_id` ni autre donnée ;
+  `agent_type`, `agent_id`, `tool_name` (`null` si absent), `project` (#68), `issue` et `model` (#181, `null` si absents) ; ni `session_id` ni autre donnée ;
 - première ligne `retry: 2000` ; commentaire `: keepalive` toutes les 15 s sans événement ;
 - sondage de la base toutes les 0,5 s : un événement ingéré est émis en moins de 2 s ;
 - curseur de départ : en-tête `Last-Event-ID` (reprise automatique du navigateur), sinon
@@ -148,8 +152,9 @@ modèle pydantic `dashboard.progress.Progress` par `tests/test_progress.py`). R�
 - **Agents** : 500 derniers événements, un agent par (`agent_type`, `agent_id`) ; événements sans
   `agent_type` ignorés. Actif = dernier événement ≠ `SubagentStop` et de moins de 30 min. `since` = dernier
   `SubagentStart`. Cartes : tous les actifs, puis 5 inactifs au plus (le plus récent de chaque rôle, hors
-  rôles actifs). Modèle et étape déduits du rôle (table dans le code), étape `pr` si l'outil contient
-  `pull_request` ; `issue` reste `null` tant que les événements ne portent pas le ticket.
+  rôles actifs). `issue` et `model` : derniers connus dans les événements de l'agent (#181) ; sans
+  `model`, modèle déduit du rôle (table dans le code) ; étape déduite du rôle, `pr` si l'outil contient
+  `pull_request`. Les 30 min d'inactivité sont le même délai que `/interactions` (`SILENT_AFTER`).
 - **Frise** : tags joints aux commits par SHA (titre = sujet du commit sans le `(#n)` final, `pr` = ce
   `#n`, date = date du commit), plus récent d'abord, 10 au plus ; tag hors des 50 derniers commits :
   listé en dernier, sans date.

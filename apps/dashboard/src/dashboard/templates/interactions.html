@@ -51,15 +51,16 @@
           <table>
             <caption class="sr-only">Sous-agents lancés par la session {{ s.session_id }}</caption>
             <thead>
-              <tr><th scope="col">Sous-agent</th><th scope="col">Identifiant</th><th scope="col">Début (UTC)</th><th scope="col">État</th><th scope="col">Durée</th></tr>
+              <tr><th scope="col">Sous-agent</th><th scope="col">Identifiant</th><th scope="col">Modèle</th><th scope="col">Début (UTC)</th><th scope="col">État</th><th scope="col">Durée</th></tr>
             </thead>
             <tbody>
               {% for a in s.subagents %}
               <tr>
                 <td>{{ a.agent_type or "—" }}</td>
                 <td><code>{{ a.agent_id }}</code></td>
+                <td>{% if a.model %}<code>{{ a.model }}</code>{% else %}—{% endif %}</td>
                 <td>{{ a.start_label }}</td>
-                <td>{{ "○ En cours" if a.running else "● Terminé" }}</td>
+                <td>{% if a.running %}○ En cours{% elif a.silent %}◌ Terminé sans signal{% else %}● Terminé{% endif %}</td>
                 <td>{{ a.duration_label }}</td>
               </tr>
               {% endfor %}

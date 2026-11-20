@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -116,7 +117,7 @@ def test_post_tool_use_has_no_sensitive_content(tmp_path: Path) -> None:
         "agent_type",
         "agent_id",
         "tool_name",
-    }
+    }  # ni issue ni model : omis quand inconnus (serveur antérieur au #181 : pas de 422)
 
 
 # Contrat : la ligne est conforme à contracts/agent-event.schema.json
@@ -249,3 +250,105 @@ def test_settings_template_sets_project() -> None:
     payload = {"event_id": "e", "ts": "2026-11-20T10:00:00+00:00", "hook_event_name": "Stop"}
     event = payload | {"session_id": "s", "project": env["VVA_PROJECT"]}
     assert ingest.AgentEvent.model_validate_json(json.dumps(event)).project == "agent-factory"
+
+
+# #181 : ticket déduit de la branche (ou du worktree), modèle lu dans le hook
+def fake_repo(root: Path, head: str) -> Path:
+    (root / ".git").mkdir(parents=True)
+    (root / ".git" / "HEAD").write_text(head, encoding="utf-8")
+    return root
+
+
+def fake_worktree(root: Path, head: str, relative: bool = False) -> Path:
+    gitdir = root / "main" / ".git" / "worktrees" / "wt"
+    gitdir.mkdir(parents=True)
+    (gitdir / "HEAD").write_text(head, encoding="utf-8")
+    tree = root / "wt"
+    tree.mkdir()
+    pointer = Path("..", "main", ".git", "worktrees", "wt") if relative else gitdir
+    (tree / ".git").write_text(f"gitdir: {pointer}\n", encoding="utf-8")
+    return tree
+
+
+def emitted(tmp_path: Path, cwd: Path, **hook: Any) -> dict[str, Any]:
+    target = tmp_path / "events.jsonl"
+    payload = subagent_start() | {"cwd": str(cwd)} | hook
+    proc, _ = run_hook(json.dumps(payload), tmp_path, target)
+    assert proc.returncode == 0
+    [line] = lines(target)
+    ingest.AgentEvent.model_validate_json(json.dumps(line))
+    return line
+
+
+def test_issue_from_feature_branch(tmp_path: Path) -> None:
+    repo = fake_repo(tmp_path / "repo", "ref: refs/heads/feat/42-xyz\n")
+    assert emitted(tmp_path, repo)["issue"] == 42
+
+
+def test_issue_from_subdirectory_of_repo(tmp_path: Path) -> None:
+    repo = fake_repo(tmp_path / "repo", "ref: refs/heads/fix/7-bug\n")
+    sub = repo / "apps" / "x"
+    sub.mkdir(parents=True)
+    assert emitted(tmp_path, sub)["issue"] == 7
+
+
+@pytest.mark.parametrize("relative", [False, True])
+def test_issue_from_worktree(tmp_path: Path, relative: bool) -> None:
+    tree = fake_worktree(tmp_path, "ref: refs/heads/feat/181-lien\n", relative)
+    assert emitted(tmp_path, tree)["issue"] == 181
+
+
+def test_issue_from_real_git_branch(tmp_path: Path) -> None:
+    git = shutil.which("git")
+    if git is None:
+        pytest.skip("git absent")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run([git, "init", "-q", "-b", "feat/42-xyz", str(repo)], check=True)  # noqa: S603
+    assert emitted(tmp_path, repo)["issue"] == 42
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        "ref: refs/heads/main\n",
+        "ref: refs/heads/feat/extraction-initiale\n",
+        "ref: refs/heads/feat/0-zero\n",
+        "ref: refs/heads/feat/42x-collé\n",
+        "ref: refs/heads/feat/12345678901-trop-long\n",
+        "0123456789abcdef0123456789abcdef01234567\n",  # HEAD détachée
+        "",
+    ],
+)
+def test_branch_without_number_gives_null_issue(tmp_path: Path, head: str) -> None:
+    repo = fake_repo(tmp_path / "repo", head)
+    assert "issue" not in emitted(tmp_path, repo)
+
+
+def test_no_repository_gives_null_issue(tmp_path: Path) -> None:
+    assert "issue" not in emitted(tmp_path, tmp_path / "absent")
+
+
+def test_issue_falls_back_to_project_dir(tmp_path: Path) -> None:
+    repo = fake_repo(tmp_path / "repo", "ref: refs/heads/feat/42-xyz\n")
+    target = tmp_path / "events.jsonl"
+    payload = {k: v for k, v in subagent_start().items() if k != "cwd"}
+    run_hook(json.dumps(payload), tmp_path, target, CLAUDE_PROJECT_DIR=str(repo))
+    [line] = lines(target)
+    assert line["issue"] == 42
+
+
+def test_model_from_hook(tmp_path: Path) -> None:
+    line = emitted(tmp_path, tmp_path, model="claude-opus-5-5")
+    assert line["model"] == "claude-opus-5-5"
+
+
+@pytest.mark.parametrize("model", [None, "", 42, {"id": SENSITIVE}])
+def test_missing_or_invalid_model_is_null(tmp_path: Path, model: object) -> None:
+    line = emitted(tmp_path, tmp_path, model=model)
+    assert "model" not in line
+    assert SENSITIVE not in json.dumps(line)
+
+
+def test_overlong_model_is_truncated(tmp_path: Path) -> None:
+    assert emitted(tmp_path, tmp_path, model="m" * 500)["model"] == "m" * 128

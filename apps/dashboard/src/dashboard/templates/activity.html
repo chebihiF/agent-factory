@@ -90,7 +90,7 @@
           <table>
             <caption class="sr-only">Dernier événement de chaque agent</caption>
             <thead>
-              <tr>{% if view.project is none %}<th scope="col">Projet</th>{% endif %}<th scope="col">Agent</th><th scope="col">Identifiant</th><th scope="col">Dernier événement</th><th scope="col">Outil</th><th scope="col">Dernière activité</th></tr>
+              <tr>{% if view.project is none %}<th scope="col">Projet</th>{% endif %}<th scope="col">Agent</th><th scope="col">Identifiant</th><th scope="col">Modèle</th><th scope="col">Dernier événement</th><th scope="col">Outil</th><th scope="col">Dernière activité</th></tr>
             </thead>
             <tbody>
               {% for a in agents %}
@@ -98,6 +98,7 @@
                 {% if view.project is none %}<td><span class="badge {{ view.badges.get(a.project, 'badge-info') }}">{{ a.project }}</span></td>{% endif %}
                 <td>{{ a.agent_type or "—" }}</td>
                 <td><code>{{ a.agent_id or "—" }}</code></td>
+                <td>{% if a.model %}<code>{{ a.model }}</code>{% else %}—{% endif %}</td>
                 <td>{{ a.hook_event_name }}</td>
                 <td>{{ a.tool_name or "—" }}</td>
                 <td><time datetime="{{ a.ts }}">{{ a.time_label }}</time></td>

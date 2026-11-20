@@ -48,6 +48,17 @@
       "maxLength": 100,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
       "default": "viral-video-agents"
+    },
+    "issue": {
+      "description": "Ticket GitHub déduit de la branche `<type>/<n>-…` de l'émetteur (#181). Absent ou null = inconnu.",
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 999999999
+    },
+    "model": {
+      "description": "Modèle de l'agent tel que fourni par le hook (#181). Absent ou null = inconnu.",
+      "type": ["string", "null"],
+      "maxLength": 128
     }
   },
   "examples": [
@@ -69,6 +80,18 @@
       "agent_id": "agent-7",
       "tool_name": "Bash",
       "project": "agent-factory"
+    },
+    {
+      "event_id": "3e5a7c91-2b4d-4e6f-8a0b-1c2d3e4f5a6b",
+      "ts": "2026-11-20T11:00:00+00:00",
+      "hook_event_name": "SubagentStart",
+      "session_id": "sess-3",
+      "agent_type": "dev-backend",
+      "agent_id": "agent-9",
+      "tool_name": null,
+      "project": "agent-factory",
+      "issue": 181,
+      "model": "claude-opus-5-5"
     }
   ]
 }

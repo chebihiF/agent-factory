@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,7 @@ from dashboard.main import app
 
 PASSWORD = "mot-de-passe-de-test"  # noqa: S105 - valeur factice de test
 TEMPLATES = Path(interactions.__file__).parent / "templates"
-Row = tuple[str, str, str, str, str | None, str | None, str | None, str]
+Row = tuple[str, str, str, str, str | None, str | None, str | None, str, int | None, str | None]
 
 
 @pytest.fixture
@@ -42,9 +42,11 @@ def ev(
     session: str = "sess-1",
     agent_id: str | None = None,
     agent_type: str | None = None,
+    model: str | None = None,
 ) -> Row:
     project = "viral-video-agents"
-    return (eid, f"2026-11-18T{ts}+00:00", name, session, agent_type, agent_id, None, project)
+    stamp = ts if "T" in ts else f"2026-11-18T{ts}+00:00"
+    return (eid, stamp, name, session, agent_type, agent_id, None, project, None, model)
 
 
 def seed(*rows: Row) -> None:
@@ -69,8 +71,16 @@ def test_shows_session_its_subagent_and_duration(client: TestClient) -> None:
         assert value in html, value
 
 
+def ago(**delta: float) -> str:
+    return (datetime.now(UTC) - timedelta(**delta)).isoformat()
+
+
+def state_cells(html: str) -> str:
+    return html.split("<tbody", 1)[1]
+
+
 def test_running_subagent_has_no_duration(client: TestClient) -> None:
-    seed(*sub(1, "10:00:05", None))
+    seed(*sub(1, ago(minutes=5), None))
     html = client.get("/interactions").text
     assert "En cours" in html
     assert "min" not in html.split("<tbody", 1)[1]
@@ -85,7 +95,8 @@ def test_only_same_agent_id_pairs_up(client: TestClient) -> None:
 def test_subagent_in_other_session_is_not_mixed(client: TestClient) -> None:
     seed(*sub(1, "10:00:00", "10:00:10", "sess-A"), *sub(2, "10:00:00", None, "sess-B"))
     with db.connect() as conn:
-        sessions = {s.session_id: s for s in interactions.load_sessions(conn)}
+        now = datetime.now(UTC)
+        sessions = {s.session_id: s for s in interactions.load_sessions(conn, now)}
     assert [s.agent_id for s in sessions["sess-A"].subagents] == ["sub-1"]
     assert sessions["sess-A"].subagents[0].duration_s == 10
     assert sessions["sess-B"].subagents[0].duration_s is None
@@ -140,7 +151,7 @@ def test_empty_state(client: TestClient) -> None:
 def test_error_state_when_database_unreadable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def broken(conn: sqlite3.Connection) -> list[interactions.Session]:
+    def broken(conn: sqlite3.Connection, now: datetime) -> list[interactions.Session]:
         raise sqlite3.OperationalError("disk I/O error")
 
     monkeypatch.setattr(interactions, "load_sessions", broken)
@@ -178,3 +189,79 @@ def test_contract_documents_interactions() -> None:
     ).read_text()
     for needle in ("/interactions", "SubagentStart", "SubagentStop", "20 dernières sessions"):
         assert needle in text, needle
+
+
+# #181 : modèle du sous-agent ; sous-agent sans SubagentStop expiré après un délai fixe
+def test_subagent_shows_its_model(client: TestClient) -> None:
+    start = ev("m1", "10:00:00", "SubagentStart", agent_id="sub-1", agent_type="qa", model="m-x")
+    tool = ev("m2", "10:00:01", "PostToolUse", agent_id="sub-1", agent_type="qa")
+    seed(start, tool, ev("m3", "10:00:02", "SubagentStop", agent_id="sub-1", agent_type="qa"))
+    html = client.get("/interactions").text
+    assert '<th scope="col">Modèle</th>' in html
+    assert "<code>m-x</code>" in state_cells(html)
+
+
+def test_silent_subagent_is_no_longer_running(client: TestClient) -> None:
+    silence = interactions.activity.SILENT_AFTER + timedelta(minutes=1)
+    seed(*sub(1, ago(seconds=silence.total_seconds()), None))
+    cells = state_cells(client.get("/interactions").text)
+    assert "En cours" not in cells
+    assert "Terminé sans signal" in cells
+
+
+def test_recent_sign_of_life_keeps_subagent_running(client: TestClient) -> None:
+    start = ev("a", ago(hours=2), "SubagentStart", agent_id="sub-1", agent_type="qa")
+    seed(start, ev("b", ago(minutes=1), "PostToolUse", agent_id="sub-1", agent_type="qa"))
+    with db.connect() as conn:
+        (session,) = interactions.load_sessions(conn, datetime.now(UTC))
+    (subagent,) = session.subagents
+    assert subagent.running and not subagent.silent
+
+
+def test_subagent_expiry_uses_the_given_clock(db_file: Path) -> None:
+    seed(*sub(1, "10:00:00", None))
+    start = datetime(2026, 11, 18, 10, tzinfo=UTC)
+    with db.connect() as conn:
+        (before,) = interactions.load_sessions(conn, start + timedelta(minutes=29))[0].subagents
+        (after,) = interactions.load_sessions(conn, start + timedelta(minutes=31))[0].subagents
+    assert before.running and not before.silent
+    assert after.silent and not after.running and after.duration_s is None
+
+
+def test_tool_events_alone_do_not_make_a_subagent(db_file: Path) -> None:
+    seed(ev("t", "10:00:00", "PostToolUse", agent_id="sub-1", agent_type="qa"))
+    with db.connect() as conn:
+        (session,) = interactions.load_sessions(conn, datetime.now(UTC))
+    assert session.subagents == []
+
+
+def test_contract_documents_silent_subagents() -> None:
+    text = (
+        Path(interactions.__file__).parents[4] / "contracts" / "dashboard-routes.md"
+    ).read_text()
+    assert "Terminé sans signal" in text and "30 min" in text
+
+
+def test_unreadable_ts_never_keeps_a_subagent_running(db_file: Path) -> None:
+    row = ("x", "pas-une-date", "SubagentStart", "sess-1", "qa", "sub-1", None, "p", None, None)
+    seed(row)
+    with db.connect() as conn:
+        (session,) = interactions.load_sessions(conn, datetime.now(UTC))
+    (subagent,) = session.subagents
+    assert subagent.silent and not subagent.running
+
+
+def test_subagents_are_aggregated_in_sql(db_file: Path) -> None:
+    seed(*sub(1, "10:00:00", "10:00:10"))
+    statements: list[str] = []
+    with db.connect() as conn:
+        conn.set_trace_callback(statements.append)
+        interactions.load_sessions(conn, datetime.now(UTC))
+    agent_query = next(q for q in statements if "agent_id IS NOT NULL" in q)
+    assert "GROUP BY session_id, agent_id" in agent_query
+
+
+def test_index_on_session_and_agent(db_file: Path) -> None:
+    with db.connect() as conn:
+        cols = [c[2] for c in conn.execute("PRAGMA index_info('idx_events_session_agent')")]
+    assert cols[:2] == ["session_id", "agent_id"]

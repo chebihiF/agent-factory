@@ -28,8 +28,8 @@ RETRY_MS = 2000
 MAX_ID_DIGITS = 18
 
 _AFTER = (
-    "SELECT rowid, event_id, ts, hook_event_name, agent_type, agent_id, tool_name, project "
-    "FROM events WHERE rowid > ? ORDER BY rowid LIMIT ?"
+    "SELECT rowid, event_id, ts, hook_event_name, agent_type, agent_id, tool_name, project, "
+    "issue, model FROM events WHERE rowid > ? ORDER BY rowid LIMIT ?"
 )
 
 log = logging.getLogger(__name__)

@@ -25,6 +25,18 @@ ISO 8601 avec fuseau (un nombre est refusé) ; il est stocké normalisé en UTC.
 `project` est optionnel (#68) : absent, l'événement est stocké avec `project="viral-video-agents"`
 (rétrocompatibilité) ; présent, il doit respecter le motif du schéma (nom de dépôt, 100 caractères).
 
+`issue` (entier de 1 à 999 999 999, ou `null`) et `model` (texte de 128 caractères au plus, ou
+`null`) sont optionnels (#181) : absents ou `null`, l'événement est stocké sans ticket ni modèle
+(rétrocompatibilité). L'émetteur déduit `issue` de la branche `<type>/<n>-…` du dépôt ou du worktree
+(lecture de `HEAD`, sans lancer git ; `<type>` en minuscules seulement, `Feat/42-x` ne donne pas
+de ticket) et recopie `model` du JSON du hook s'il y figure. Claude Code ne fournit pas toujours
+`model`, notamment dans les hooks des sous-agents : le dashboard affiche alors « — ». Inconnus,
+les deux champs sont **omis** (jamais `null` à l'émission), comme `project`.
+
+**Ordre de déploiement : serveur d'abord.** Un serveur antérieur au #181 refuse tout champ hors
+schéma, et un lot est atomique : un seul événement portant `issue` ou `model` ferait refuser tout
+le lot (422). Déployer le dashboard avant de mettre à jour les hooks des postes.
+
 Tout champ hors schéma (ex. `prompt`) est refusé. Un lot est **atomique** : si un seul
 événement est invalide, rien n'est écrit.
 
@@ -32,7 +44,8 @@ Tout champ hors schéma (ex. `prompt`) est refusé. Un lot est **atomique** : si
 
 SQLite, fichier désigné par `VVA_DB_PATH`, table `events` (clé unique `event_id`,
 index sur `ts`, `agent_id` et `project`, mode WAL, attente de verrou 5 s). Schéma créé au premier
-accès ; une base antérieure au #68 reçoit la colonne `project` (défaut `viral-video-agents`). Un `event_id` déjà connu est ignoré (idempotence).
+accès ; une base antérieure au #68 reçoit la colonne `project` (défaut `viral-video-agents`), une base
+antérieure au #181 les colonnes `issue` et `model` (`NULL`). Un `event_id` déjà connu est ignoré (idempotence).
 
 ## Réponses
 

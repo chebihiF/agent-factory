@@ -73,8 +73,8 @@
       "required": ["name", "model", "issue", "step", "since", "active", "elapsed_s"],
       "properties": {
         "name": { "description": "agent_type de l'événement.", "type": "string" },
-        "model": { "description": "Modèle du rôle d'agent ; null si rôle inconnu.", "type": ["string", "null"] },
-        "issue": { "description": "Ticket en cours ; null tant que les événements ne le portent pas.", "type": ["integer", "null"] },
+        "model": { "description": "Dernier modèle porté par les événements de l'agent (#181), sinon modèle du rôle ; null si inconnu.", "type": ["string", "null"] },
+        "issue": { "description": "Dernier ticket porté par les événements de l'agent (#181) ; null sinon.", "type": ["integer", "null"] },
         "step": {
           "description": "Étape déduite du rôle (reviewer = review, qa, devops = deploy, dev-* = dev) ou de l'outil (pull_request = pr) ; null si inconnue.",
           "enum": ["dev", "review", "qa", "pr", "deploy", null]
