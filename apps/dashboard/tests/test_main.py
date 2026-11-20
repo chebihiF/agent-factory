@@ -60,10 +60,10 @@ def test_home_redirects_visitor_to_login(env: None) -> None:
     assert resp.headers["location"] == "/login"
 
 
-def test_home_redirects_logged_in_parent_to_progress(client: TestClient) -> None:
+def test_home_shows_the_board_to_the_logged_in_parent(client: TestClient) -> None:
     resp = client.get("/")
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/progress"
+    assert resp.status_code == 200
+    assert "Tableau de bord des agents" in resp.text
 
 
 def test_home_is_closed_without_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,7 +73,7 @@ def test_home_is_closed_without_configuration(monkeypatch: pytest.MonkeyPatch) -
     assert resp.headers["location"] == "/login"
 
 
-def test_home_redirect_is_not_cached(client: TestClient) -> None:
+def test_home_is_not_cached(client: TestClient) -> None:
     assert client.get("/").headers["cache-control"] == "no-store"
 
 

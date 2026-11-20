@@ -51,6 +51,8 @@ EPIC_RE = re.compile(r"[ÉE]pique\s*:\s*#(\d+)", re.IGNORECASE)
 CLOSES_RE = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.IGNORECASE)
 TITLE_REF_RE = re.compile(r"\(#(\d+)\)")
 PR_SUFFIX_RE = re.compile(r"\(#(\d+)\)\s*$")
+QUESTION_RE = re.compile(r"Attend l['’]utilisateur\s*:\s*(.+)", re.IGNORECASE)
+QUESTION_MAX = 200
 NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 
@@ -244,6 +246,8 @@ class Issue:
     completed: bool  # fermé « completed » (≠ « not planned »)
     labels: frozenset[str]
     epic: int | None
+    updated_at: str | None = None
+    question: str | None = None  # ligne « Attend l'utilisateur : … » du corps (#179)
 
 
 @dataclass(frozen=True)
@@ -252,6 +256,8 @@ class Pull:
 
     number: int
     issue: int | None
+    title: str = ""
+    updated_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -303,12 +309,15 @@ def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:
         if not isinstance(number, int):
             continue
         body, title = _text(item.get("body")) or "", _text(item.get("title")) or ""
+        updated = _text(item.get("updated_at"))
         if "pull_request" in item:
             if item.get("state") == "open":
                 match = CLOSES_RE.search(body) or TITLE_REF_RE.search(title)
-                pulls.append(Pull(number, int(match.group(1)) if match else None))
+                closes = int(match.group(1)) if match else None
+                pulls.append(Pull(number, closes, title, updated))
             continue
         epic = EPIC_RE.search(body)
+        question = QUESTION_RE.search(body)
         issues.append(
             Issue(
                 number,
@@ -317,6 +326,8 @@ def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:
                 item.get("state_reason") == "completed",
                 _labels(item),
                 int(epic.group(1)) if epic else None,
+                updated,
+                question.group(1).strip()[:QUESTION_MAX] if question else None,
             )
         )
     return tuple(issues), tuple(pulls)

@@ -79,7 +79,7 @@ def test_login_page_is_public(client: TestClient) -> None:
 def test_good_password_sets_signed_cookie_and_shows_activity(client: TestClient) -> None:
     resp = client.post("/login", data={"password": PASSWORD})
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/activity"
+    assert resp.headers["location"] == "/"
     cookie = resp.headers["set-cookie"]
     assert cookie.startswith(f"{auth.COOKIE_NAME}=")
     for attr in ("HttpOnly", "Secure", "SameSite=lax", "Path=/"):

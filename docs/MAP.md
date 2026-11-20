@@ -73,6 +73,7 @@
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
 - `docs/design/activity.md` — Écran « Activité des agents »
+- `docs/design/dashboard-refonte.md` — Refonte du dashboard des agents (ticket #179)
 - `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
 - `docs/telemetry-cablage.md` — Câblage de l'ingestion des événements d'agents (#180)

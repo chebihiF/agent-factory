@@ -33,7 +33,7 @@ personnelle dans le cookie. Le cookie `Secure` impose HTTPS (Traefik en prod).
 | Route | Accès | Réponses |
 |---|---|---|
 | `GET /healthz` | public | 200 `{"status": "ok", "version": "<APP_VERSION>"}` — aucune donnée d'événement |
-| `GET /` | public | 303 vers `/progress` avec session valide, sinon vers `/login` (jamais mis en cache) |
+| `GET /` | session | 200 tableau de bord unique en lecture seule (#179, voir ci-dessous) ; 303 vers `/login` sans session valide (aucune lecture) ; 503 si la base est illisible ; jamais mis en cache |
 | `GET /login` | public | 200 formulaire (champ `password`) |
 | `POST /login` | public, limité | voir ci-dessous |
 | `GET /activity` | session | 200 page ; 303 vers `/login` sans session valide (aucune lecture de la base) ; 503 si la base est illisible |
@@ -46,6 +46,8 @@ personnelle dans le cookie. Le cookie `Secure` impose HTTPS (Traefik en prod).
 | `GET /progress` | session | 200 page « Suivi du projet » ; 303 vers `/login` sans session valide (aucune lecture GitHub ni base) |
 | `GET /api/v1/progress` | session | 200 JSON conforme à [`progress.schema.json`](progress.schema.json) ; 401 sans session valide |
 | `GET /static/progress.js` | public | rafraîchissement de `/progress` (JS natif, sans CDN) |
+| `GET /static/board.js` | public | rafraîchissement de `/` par GET toutes les 5 s et envoi du filtre (JS natif, sans CDN) |
+| `GET /static/board.css` | public | style du tableau de bord (variables de `tokens.css` uniquement) |
 
 ### `POST /login`
 
@@ -53,7 +55,7 @@ Corps `application/x-www-form-urlencoded`, champ `password`, 4 Ko maximum.
 
 | Code | Cas |
 |---|---|
-| 303 | bon mot de passe : pose `vva_session`, redirige vers `/activity` |
+| 303 | bon mot de passe : pose `vva_session`, redirige vers `/` (#179) |
 | 401 | mot de passe faux, vide ou absent — message neutre « Identifiants invalides. » |
 | 413 | corps > 4 Ko |
 | 429 | plus de **5 tentatives par minute** (fenêtre glissante, globale : compte unique), en-tête `Retry-After: 60` |
@@ -61,6 +63,46 @@ Corps `application/x-www-form-urlencoded`, champ `password`, 4 Ko maximum.
 
 L'ordre des contrôles est : configuration, limite, taille, mot de passe. Une tentative
 compte dans la limite qu'elle réussisse ou non.
+
+### `GET /`
+
+Tableau de bord unique (#179, spec `docs/design/dashboard-refonte.md`) : **lecture seule**. Aucune
+commande, aucun `hx-post` ni `<form method="post">` ; les actions sont des liens GitHub
+(`target="_blank" rel="noopener"`, « (nouvel onglet) » dans le nom accessible), des ancres
+internes et le formulaire GET du filtre. Réponses en `no-store`. Quatre sections :
+
+- **À faire par toi** (cache GitHub de `/progress`, dépôt `VVA_GITHUB_REPO`) : « ? Attend ta
+  réponse » = ticket ouvert dont le corps contient une ligne `Attend l'utilisateur : <question>`
+  (question affichée, 200 caractères au plus ; les commentaires ne sont pas lus, pour rester sous
+  la limite de 60 requêtes/heure) ; « ↗ À relire » = PR ouvertes ; « ◆ Décision » = tickets
+  `blocked` sans cette ligne. Épiques et labels ignorés de `/progress` exclus.
+- **Qui fait quoi** (500 derniers événements) : un agent par (`agent_type`, `agent_id`), rôle en
+  français, état « ● Au travail » (dernier événement ≠ `SubagentStop`, moins de 30 min) / « ▲ Bloqué »
+  (au travail sur un ticket `blocked`) / « ○ Au repos » ; titre du ticket (jamais son numéro),
+  projet, « Depuis » (dernier `SubagentStart`, sinon premier événement de la fenêtre), « Signe de vie »
+  (« ▲ » en gras au-delà de 2 min pour un agent au travail). Actifs, puis un inactif par rôle (5 au plus).
+- **Avancement des tickets** : colonnes Backlog / Prêt / En cours / Revue / Livré (mêmes statuts
+  que `/progress`), compteur, 3 titres par colonne (plus récents d'abord) et « N de plus ».
+- **Quotas et tokens** : jauge = tokens des 24 h glissantes ÷ plafond (`controls.cap_tokens`, lu sans
+  écrire) ; « ✓ Confortable » < 70 % ≤ « ▲ Attention » ≤ 90 % < « ✖ Presque épuisé » ; tokens par
+  agent (24 h), par jour (7 jours, date UTC de `ts`) et 5 tickets les plus gourmands (7 jours) :
+  ticket d'une session = dernier `issue` connu dans ses événements (`token_usage.session_id`),
+  jamais une jointure sur `agent_id` (voir `token-usage.md`). Valeurs toujours écrites en texte.
+
+Filtre `?projet=<nom>` (mêmes projets et compteurs que `/activity`) : il restreint « Qui fait quoi » ;
+un projet autre que celui de `VVA_GITHUB_REPO` vide « À faire » et « Avancement » (« Aucun ticket pour
+<projet> », lien « Afficher tous les projets ») ; les tokens ne portent pas de projet et restent
+globaux. Projet inconnu : « Tous » avec message `role="status"`.
+
+États : en direct (« ● En direct · mis à jour à HH:MM:SS UTC ») ; ingestion muette = dernier
+événement (toutes origines) de plus de **5 min** : bandeau `role="status"` et pastille « ▲ Aucun signe
+de vie depuis N min » ; aucun événement : bandeau qui explique quoi vérifier ; erreur GitHub :
+bandeau `role="alert"` avec l'heure et le lien GET « Recharger les données » (garde `?projet=`),
+dernières données gardées ; base illisible : 503, même bandeau. Chaque vue vide a son message
+(« Tu es à jour », « Aucun agent au travail », « Aucun ticket pour l'instant », « Rien consommé
+aujourd'hui ») ; les agents se lancent depuis le terminal du tech lead, jamais depuis la page.
+`static/board.js` recharge `#contenu` par GET toutes les 5 s (pas si l'onglet est caché ou si le
+focus est dans la zone) ; en cas d'échec, bandeau `role="alert"` et données précédentes conservées.
 
 ### `GET /activity`
 

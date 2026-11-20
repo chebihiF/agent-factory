@@ -1,0 +1,169 @@
+{#- Tableau de bord unique en lecture seule (#179). Spec : docs/design/dashboard-refonte.md.
+    Aucune commande : liens GitHub (nouvel onglet), ancres internes et formulaire GET du filtre. -#}
+{% macro plural(n, one, many) %}{{ n }} {{ one if n < 2 else many }}{% endmacro %}
+{% macro external(url, label) -%}
+<a class="action" href="{{ url }}" target="_blank" rel="noopener">{{ label }} ↗<span class="sr-only"> (nouvel onglet)</span></a>
+{%- endmacro %}
+{% macro empty(title, illustration) %}
+<div class="empty">
+  {{ illustration }}
+  <h3>{{ title }}</h3>
+  {{ caller() }}
+</div>
+{% endmacro %}
+{% set robot %}<svg class="illus" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><rect x="14" y="20" width="36" height="30" rx="8" fill="var(--color-surface-2)" stroke="var(--color-border)" stroke-width="2"/><circle cx="26" cy="34" r="4" fill="var(--color-text-muted)"/><circle cx="38" cy="34" r="4" fill="var(--color-text-muted)"/><path d="M32 20v-8" stroke="var(--color-border)" stroke-width="2"/><circle cx="32" cy="10" r="3" fill="var(--color-accent)"/></svg>{% endset %}
+{% set check %}<svg class="illus" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><circle cx="32" cy="32" r="22" fill="var(--color-ok-bg)" stroke="var(--color-ok)" stroke-width="2"/><path d="M22 33l7 7 14-15" fill="none" stroke="var(--color-ok)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endset %}
+{% set columns_svg %}<svg class="illus" viewBox="0 0 64 64" aria-hidden="true" focusable="false">{% for x in (6, 18, 30, 42, 54) %}<rect x="{{ x - 4 }}" y="14" width="8" height="36" rx="2" fill="none" stroke="var(--color-border)" stroke-width="2" stroke-dasharray="3 3"/>{% endfor %}</svg>{% endset %}
+{% set dial %}<svg class="illus" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M10 44a22 22 0 0 1 44 0" fill="none" stroke="var(--color-surface-2)" stroke-width="6"/><path d="M32 44L16 36" stroke="var(--color-text-muted)" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="44" r="4" fill="var(--color-text-muted)"/></svg>{% endset %}
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Tableau de bord des agents</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/board.css">
+  <script src="/static/board.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="title">
+      <h1>Tableau de bord des agents</h1>
+      {% if b %}<p class="muted">{{ b.today }}</p>{% endif %}
+      <p class="readonly"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg> Lecture seule : cette page n'envoie aucune commande</p>
+    </div>
+    {% if b %}
+    <form method="get" action="/" aria-label="Filtre par projet" data-autosubmit>
+      <fieldset>
+        <legend>Projet</legend>
+        {% for name, count in b.projects.items() %}
+        <label class="segment"><input type="radio" name="projet" value="{{ name }}"{% if (b.project or "") == name %} checked{% endif %}> {{ name or "Tous les projets" }} <span class="data">{{ count }}</span></label>
+        {% endfor %}
+        <noscript><button type="submit">Afficher</button></noscript>
+      </fieldset>
+    </form>
+    {% endif %}
+  </header>
+
+  <nav class="jump" aria-label="Aller à une section">
+    <a href="#a-faire">À faire</a><a href="#agents">Agents</a><a href="#avancement">Tickets</a><a href="#quotas">Quotas</a>
+  </nav>
+
+  <div id="erreur-reseau" class="banner danger" hidden>
+    <p>Les données n'ont pas pu être rechargées. Les dernières données restent affichées.</p>
+    <a href="{{ reload_url }}">Recharger les données</a>
+  </div>
+
+  <div id="contenu" data-src="{{ reload_url }}">
+  {% if not b %}
+    <div role="alert" class="banner danger"><p>La base des événements est illisible ({{ db_error_at }} UTC). Aucune donnée n'est affichée.</p><a href="{{ reload_url }}">Recharger les données</a></div>
+  {% else %}
+    <p class="pill pill-{{ b.ingestion }}" role="status">
+      {% if b.ingestion == "live" %}<span class="beat">●</span> En direct · mis à jour à {{ b.updated_at }} UTC
+      {% elif b.ingestion == "silent" %}▲ Aucun signe de vie depuis {{ b.silent_minutes }} min
+      {% else %}○ Aucun événement reçu{% endif %}
+    </p>
+    {% if b.unknown_project %}<p role="status" class="banner info">Projet inconnu : affichage de tous les projets.</p>{% endif %}
+    {% if b.github_error_at %}
+    <div role="alert" class="banner danger"><p>Lecture GitHub impossible ({{ b.github_error_at }} UTC) : tickets et pull requests affichent les dernières données connues.</p><a href="{{ reload_url }}">Recharger les données</a></div>
+    {% endif %}
+    {% if b.ingestion == "silent" %}
+    <div role="status" class="banner warn"><p><strong>Aucun signe de vie depuis {{ b.silent_minutes }} min.</strong> Soit aucun agent ne travaille, soit l'envoi des événements est coupé : si un agent tourne, vérifie le câblage de la télémétrie (docs/telemetry-cablage.md).</p></div>
+    {% elif b.ingestion == "none" %}
+    <div role="status" class="banner info"><p><strong>Aucun événement reçu pour l'instant.</strong> Les agents se lancent depuis le terminal du tech lead, pas depuis cette page ; si un agent tourne déjà, vérifie le câblage de la télémétrie (docs/telemetry-cablage.md).</p></div>
+    {% endif %}
+
+    <div class="grid">
+    <section id="a-faire" class="panel todo" aria-labelledby="h-a-faire">
+      <h2 id="h-a-faire">À faire par toi <span class="counter">{{ plural(b.todos | length, "élément", "éléments") }}</span></h2>
+      {% if b.todos %}
+      <ul class="todos">
+        {% for t in b.todos %}
+        <li class="todo-card kind-{{ t.kind }}">
+          <p class="tag">{% if t.kind == "answer" %}? Attend ta réponse{% elif t.kind == "review" %}↗ À relire{% else %}◆ Décision{% endif %}</p>
+          <h3>{{ t.title }}</h3>
+          <p>{{ t.context }}</p>
+          {% if t.age %}<p class="muted">{{ t.age }}</p>{% endif %}
+          {{ external(t.url, "Voir la PR sur GitHub" if t.kind == "review" else "Ouvrir l'issue sur GitHub") }}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      {% call empty("Tu es à jour", check) %}<p>Cette liste se remplit seule dès que quelque chose t'attend sur GitHub.</p><a class="action" href="#avancement">Aller à l'avancement</a>{% endcall %}
+      {% endif %}
+    </section><!-- /a-faire -->
+
+    <section id="agents" class="panel" aria-labelledby="h-agents">
+      <h2 id="h-agents">Qui fait quoi{% if b.project %} · {{ b.project }}{% endif %}</h2>
+      {% if b.agents %}
+      <ul class="agents">
+        {% for a in b.agents %}
+        <li class="agent state-{{ a.state }}">
+          <div class="agent-head"><strong>{{ a.role }}</strong> <span class="state">{% if a.state == "working" %}● Au travail{% elif a.state == "blocked" %}▲ Bloqué{% else %}○ Au repos{% endif %}</span></div>
+          <p>{{ a.ticket }} <span class="muted">· {{ a.project }}</span></p>
+          <p class="meta">{% if a.since %}<span>Depuis {{ a.since }}</span>{% endif %}
+            {% if a.late %}<span class="late">▲ Signe de vie {{ a.last_seen }}</span>{% else %}<span>Signe de vie {{ a.last_seen }}</span>{% endif %}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif b.project %}
+      {% call empty("Aucun agent pour " ~ b.project, robot) %}<p>Les agents se lancent depuis le terminal du tech lead, pas depuis cette page.</p><a class="action" href="/#agents">Afficher tous les projets</a>{% endcall %}
+      {% else %}
+      {% call empty("Aucun agent au travail", robot) %}<p>Cette liste se remplit dès qu'un agent démarre. Les agents se lancent depuis le terminal du tech lead, pas depuis cette page.</p><a class="action" href="#avancement">Voir les tickets prêts</a>{% endcall %}
+      {% endif %}
+    </section><!-- /agents -->
+    </div>
+
+    <section id="avancement" class="panel" aria-labelledby="h-avancement">
+      <h2 id="h-avancement">Avancement des tickets</h2>
+      {% if not b.tickets_here %}
+      {% call empty("Aucun ticket pour " ~ b.project, columns_svg) %}<p>Les tickets suivis sont ceux d'un autre dépôt.</p><a class="action" href="/#avancement">Afficher tous les projets</a>{% endcall %}
+      {% elif b.tickets_total %}
+      <div class="kanban">
+        {% for c in b.columns %}
+        <section aria-label="{{ c.label }}" class="col col-{{ c.key }}">
+          <h3>{{ c.label }} <span class="counter">{{ plural(c.count, "ticket", "tickets") }}</span></h3>
+          <ul>
+            {% for card in c.cards %}<li class="card{% if c.key == 'in_progress' %} current{% endif %}">{{ card.title }}</li>{% endfor %}
+          </ul>
+          {% if c.more > 0 %}<p class="muted">{{ c.more }} de plus</p>{% endif %}
+        </section>
+        {% endfor %}
+      </div>
+      {% else %}
+      {% call empty("Aucun ticket pour l'instant", columns_svg) %}<p>Les colonnes se remplissent dès qu'un ticket existe sur GitHub.</p>{{ external("https://github.com/" ~ repo ~ "/issues", "Ouvrir les issues sur GitHub") }}{% endcall %}
+      {% endif %}
+    </section><!-- /avancement -->
+
+    <section id="quotas" class="panel" aria-labelledby="h-quotas">
+      <h2 id="h-quotas">Quotas et tokens</h2>
+      {% if b.tokens_week %}
+      <div class="quotas">
+        <div>
+          <h3>Plafond sur 24 h glissantes</h3>
+          <div class="gauge level-{{ b.gauge.level }}"><span style="--w: {{ [b.gauge.percent, 100] | min }}%"></span></div>
+          <p><strong>{{ b.gauge.percent }} % utilisé</strong> · <span class="word">{{ b.gauge.word }}</span></p>
+          <p class="muted"><span class="data">{{ b.gauge.used | thousands }}</span> sur <span class="data">{{ b.gauge.cap | thousands }}</span> tokens ; chaque token compte pendant 24 h.</p>
+          <h3>Par agent (24 h)</h3>
+          {% if b.by_agent %}<ul class="bars">{% for x in b.by_agent %}<li><span>{{ x.label }}</span><span class="bar"><span style="--w: {{ x.percent }}%"></span></span><span class="data">{{ x.value | thousands }}</span></li>{% endfor %}</ul>
+          {% else %}<p class="muted">Rien sur les dernières 24 h.</p>{% endif %}
+        </div>
+        <div>
+          <h3>7 derniers jours</h3>
+          <ol class="days">{% for d in b.days %}<li><span>{{ d.label }}</span><span class="bar"><span style="--w: {{ d.percent }}%"></span></span><span class="data">{{ d.value | thousands }}</span></li>{% endfor %}</ol>
+          <h3>Tickets les plus gourmands (7 jours)</h3>
+          {% if b.by_ticket %}<ul class="bars">{% for x in b.by_ticket %}<li><span>{{ x.label }}</span><span class="bar"><span style="--w: {{ x.percent }}%"></span></span><span class="data">{{ x.value | thousands }}</span></li>{% endfor %}</ul>
+          {% else %}<p class="muted">Aucun token rattaché à un ticket.</p>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      {% call empty("Rien consommé aujourd'hui", dial) %}<p>Les jauges se remplissent dès que les agents consomment des tokens.</p><a class="action" href="#agents">Aller à la liste des agents</a>{% endcall %}
+      {% endif %}
+    </section><!-- /quotas -->
+  {% endif %}
+  </div>
+</main>
+</body>
+</html>
