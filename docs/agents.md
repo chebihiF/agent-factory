@@ -51,11 +51,42 @@ d'outils par ticket, tickets au-dessus de 2× la médiane, promotions vers Opus.
 prompt, de contenu ni d'identifiant de session ; un nom d'agent ou de modèle hors
 `[A-Za-z0-9._:-]{1,64}` est affiché `?`.
 
+### Durée par ticket (#78)
+
+Chaque ligne de ticket se termine par `· <durée>, CI <part> %[, pauses <durée>]`, par exemple
+`#42 1 000 : dev-backend 700 · 3 h 10, CI 25 %, pauses 1 h 20`.
+
+- **Durée** : du premier au dernier événement de télémétrie (table `events`, tous types) du
+  ticket, rattaché par session comme les tokens. C'est une approximation de « En cours -> Livré »
+  (la carte du Project n'est pas lue). Un ticket avec événements mais sans tokens est listé (`0`).
+- **Pauses** : somme des silences de plus de 30 minutes entre deux événements du ticket (quota
+  atteint ou attente humaine : la télémétrie ne les distingue pas).
+- **Attente CI** : union des intervalles des exécutions (`startedAt` -> `updatedAt`, CI et
+  release en parallèle comptés une fois) des branches `<type>/<n>-…`, coupée à la période du
+  ticket (premier -> dernier événement), rapportée à sa durée. Sans source : `CI n/d`. Seuls le
+  numéro de ticket et les durées sont retenus, jamais le nom de branche ni de contenu.
+- **Limite connue** : le journal ne mémorise pas le dépôt d'un ticket. `--ci-repo` doit donc
+  être le dépôt des tickets suivis ; si deux dépôts ont des numéros qui se chevauchent, seule la
+  période du ticket écarte les exécutions de l'autre. Les tickets absents du journal sont ignorés.
+- `gh run list` est limité à 200 exécutions : si la liste est pleine, un avertissement sur
+  stderr signale que l'attente CI des tickets anciens peut être sous-estimée.
+
+```sh
+tools/agents/bin/token-report.sh --db vva.db --ci-repo OWNER/REPO   # `gh run list` (réseau)
+gh run list -R OWNER/REPO --limit 200 --json headBranch,startedAt,updatedAt > runs.json
+tools/agents/bin/token-report.sh --db vva.db --ci-json runs.json    # hors ligne
+```
+
+Le rapport reste local et sans réseau par défaut ; `gh` n'est appelé qu'avec `--ci-repo`
+(échec de `gh` : `CI n/d`, jamais d'erreur).
+
 ### Sources
 
 | Donnée | Source | Note |
 |--------|--------|------|
 | tokens par session, agent, modèle | table `token_usage` ([contrat](../contracts/token-usage.md)) | `agent_id` NULL = fil principal |
+| durée et pauses par ticket | table `events` (horodatages seuls) | voir « Durée par ticket » |
+| attente CI par ticket | `gh run list --json headBranch,startedAt,updatedAt` | facultatif, `--ci-repo` ou `--ci-json` |
 | appels et échecs d'outils | table `events` ([contrat](../contracts/agent-event.schema.json)) | `PostToolUse`, `PostToolUseFailure` |
 | session -> ticket, échecs notés, promotions | journal local `~/.vva/agents-journal.jsonl` ([contrat](../contracts/agents-journal.schema.json)) | `VVA_AGENTS_JOURNAL` pour un autre chemin |
 
