@@ -73,11 +73,13 @@ internes et le formulaire GET du filtre. Réponses en `no-store`. Quatre section
 
 - **À faire par toi** (cache GitHub de `/progress`, dépôt `VVA_GITHUB_REPO`) : « ? Attend ta
   réponse » = ticket ouvert dont le corps contient une ligne `Attend l'utilisateur : <question>`
+  (début de ligne, puce `-`/`*` permise ; ni citation `>` ni bloc de code ``` ou ~~~)
   (question affichée, 200 caractères au plus ; les commentaires ne sont pas lus, pour rester sous
   la limite de 60 requêtes/heure) ; « ↗ À relire » = PR ouvertes ; « ◆ Décision » = tickets
   `blocked` sans cette ligne. Épiques et labels ignorés de `/progress` exclus.
 - **Qui fait quoi** (500 derniers événements) : un agent par (`agent_type`, `agent_id`), rôle en
-  français, état « ● Au travail » (dernier événement ≠ `SubagentStop`, moins de 30 min) / « ▲ Bloqué »
+  français, ticket identifié par (`project`, `issue`) : titre GitHub seulement si `project` = nom du
+  dépôt `VVA_GITHUB_REPO`, sinon « Ticket hors du dépôt suivi » (même numéro, autre projet) ; état « ● Au travail » (dernier événement ≠ `SubagentStop`, moins de 30 min) / « ▲ Bloqué »
   (au travail sur un ticket `blocked`) / « ○ Au repos » ; titre du ticket (jamais son numéro),
   projet, « Depuis » (dernier `SubagentStart`, sinon premier événement de la fenêtre), « Signe de vie »
   (« ▲ » en gras au-delà de 2 min pour un agent au travail). Actifs, puis un inactif par rôle (5 au plus).
@@ -86,13 +88,19 @@ internes et le formulaire GET du filtre. Réponses en `no-store`. Quatre section
 - **Quotas et tokens** : jauge = tokens des 24 h glissantes ÷ plafond (`controls.cap_tokens`, lu sans
   écrire) ; « ✓ Confortable » < 70 % ≤ « ▲ Attention » ≤ 90 % < « ✖ Presque épuisé » ; tokens par
   agent (24 h), par jour (7 jours, date UTC de `ts`) et 5 tickets les plus gourmands (7 jours) :
-  ticket d'une session = dernier `issue` connu dans ses événements (`token_usage.session_id`),
-  jamais une jointure sur `agent_id` (voir `token-usage.md`). Valeurs toujours écrites en texte.
+  ticket d'une session = dernier couple (`project`, `issue`) connu dans ses événements
+  (`token_usage.session_id`), regroupé sur ce couple, jamais une jointure sur `agent_id` (voir
+  `token-usage.md`). Valeurs toujours écrites en texte.
 
 Filtre `?projet=<nom>` (mêmes projets et compteurs que `/activity`) : il restreint « Qui fait quoi » ;
 un projet autre que celui de `VVA_GITHUB_REPO` vide « À faire » et « Avancement » (« Aucun ticket pour
 <projet> », lien « Afficher tous les projets ») ; les tokens ne portent pas de projet et restent
 globaux. Projet inconnu : « Tous » avec message `role="status"`.
+
+Aucune écriture : la page ne fait que des `SELECT` (vérifié par `PRAGMA data_version` et
+`total_changes` dans `tests/test_board.py`). Seule exception, comme toutes les routes : `db.connect()`
+crée le fichier et le schéma s'ils sont absents (une fois par processus, `CREATE … IF NOT EXISTS` et
+la ligne unique de `controls`). Textes GitHub (titres, question) toujours échappés par Jinja.
 
 États : en direct (« ● En direct · mis à jour à HH:MM:SS UTC ») ; ingestion muette = dernier
 événement (toutes origines) de plus de **5 min** : bandeau `role="status"` et pastille « ▲ Aucun signe

@@ -6,6 +6,7 @@ GitHub est toujours simulé ; aucune donnée réelle.
 from __future__ import annotations
 
 import re
+import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -96,7 +97,7 @@ def seed(*events: tuple[Any, ...]) -> None:
     for i, event in enumerate(events):
         ts, hook, agent_type, agent_id, *rest = event
         number, project = (*rest, None, None)[:2]
-        session = f"sess-{number}"
+        session = f"sess-{project}-{number}" if project else f"sess-{number}"
         project = project or db.DEFAULT_PROJECT
         rows.append((f"e{i}", ts, hook, session, agent_type, agent_id, None, project, number, None))
     with db.connect() as conn:
@@ -443,3 +444,79 @@ def test_hidden_network_banner_stays_hidden() -> None:
     css = (STATIC / "board.css").read_text(encoding="utf-8")
     assert "[hidden] { display: none !important; }" in css
     assert 'id="erreur-reseau" class="banner danger" hidden' in TEMPLATE.read_text(encoding="utf-8")
+
+
+# --- Revue : même numéro dans deux projets, aucune écriture, échappement --------------------
+def test_same_number_in_another_project_never_borrows_the_tracked_title(
+    client: TestClient, github: GitHub
+) -> None:
+    github([issue(182, "Vue Tickets du tableau de bord", "P1", "blocked")])
+    seed(
+        (ago_iso(seconds=10), "PreToolUse", "dev-backend", "a1", 182, "agent-factory"),
+        (ago_iso(seconds=10), "PreToolUse", "qa", "q1", 182),
+    )
+    seed_tokens(("sess-agent-factory-182", "dev-backend", 70_000), ("sess-182", "qa", 20_000))
+    html = client.get("/").text
+    agents = text(section(html, "agents"))
+    assert "Ticket hors du dépôt suivi · agent-factory" in agents
+    assert "Vue Tickets du tableau de bord · viral-video-agents" in agents
+    assert agents.count("▲ Bloqué") == 1  # seul le ticket du dépôt suivi est bloqué
+    tickets = re.search(r"Tickets les plus gourmands(.*?)</ul>", html, re.S)
+    assert tickets
+    rows = text(tickets.group(1))
+    assert "Ticket hors du dépôt suivi 70 000" in rows
+    assert "Vue Tickets du tableau de bord 20 000" in rows
+
+
+def test_board_writes_nothing_to_the_database(client: TestClient, github: GitHub) -> None:
+    github([issue(4, "Ticket prêt", "P1")])
+    seed((ago_iso(seconds=10), "PreToolUse", "qa", "q1", 4))
+    seed_tokens(("sess-4", "qa", 600_000))  # plafond dépassé : /controls mettrait en pause
+    watcher = sqlite3.connect(db.db_path())
+    try:
+        before = watcher.execute("PRAGMA data_version").fetchone()[0]
+        changes = watcher.total_changes
+        assert client.get("/").status_code == 200
+        assert client.get("/?projet=agent-factory").status_code == 200
+        assert watcher.execute("PRAGMA data_version").fetchone()[0] == before
+        assert watcher.total_changes == changes
+        assert watcher.execute("SELECT paused FROM controls").fetchone()[0] == 0
+    finally:
+        watcher.close()
+
+
+XSS = ("<script>alert(1)</script>", '"><img src=x onerror=alert(1)>')
+
+
+def test_github_texts_are_escaped(client: TestClient, github: GitHub) -> None:
+    github(
+        [
+            issue(5, XSS[0], "P1", "blocked", body=f"Attend l'utilisateur : {XSS[1]} {XSS[0]}"),
+            issue(40, XSS[1], body="Closes #5", pull_request={}),
+            issue(6, XSS[1], "P1", "in-progress"),
+        ]
+    )
+    seed((ago_iso(seconds=10), "PreToolUse", "qa", "q1", 5))
+    html = client.get("/").text
+    for raw in (*XSS, "<img", "<script>alert"):
+        assert raw not in html, raw
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&#34;&gt;&lt;img src=x onerror=alert(1)&gt;" in html
+
+
+@pytest.mark.parametrize(
+    ("body", "question"),
+    [
+        ("Contexte\nAttend l'utilisateur : choisir A ou B ?", "choisir A ou B ?"),
+        ("- Attend l’utilisateur : valider ?\nsuite", "valider ?"),
+        ("Rien ici, sauf : Attend l'utilisateur : en milieu de ligne", None),
+        ("> Attend l'utilisateur : citation", None),
+        ("```\nAttend l'utilisateur : dans du code\n```", None),
+        ("~~~\nAttend l'utilisateur : dans du code\n~~~", None),
+    ],
+)
+def test_question_is_a_line_of_its_own_outside_quotes_and_code(
+    body: str, question: str | None
+) -> None:
+    issues, _ = progress.parse_issues([issue(1, "T", body=body)])
+    assert issues[0].question == question

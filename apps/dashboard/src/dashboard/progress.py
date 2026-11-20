@@ -51,7 +51,11 @@ EPIC_RE = re.compile(r"[ÉE]pique\s*:\s*#(\d+)", re.IGNORECASE)
 CLOSES_RE = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.IGNORECASE)
 TITLE_REF_RE = re.compile(r"\(#(\d+)\)")
 PR_SUFFIX_RE = re.compile(r"\(#(\d+)\)\s*$")
-QUESTION_RE = re.compile(r"Attend l['’]utilisateur\s*:\s*(.+)", re.IGNORECASE)
+# Ligne à part entière (puce permise) ; jamais une citation « > » ni un bloc de code (#179).
+QUESTION_RE = re.compile(
+    r"^\s*[-*]?\s*Attend l['’]utilisateur\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE
+)
+FENCE_RE = re.compile(r"^\s*(```|~~~).*?^\s*\1", re.DOTALL | re.MULTILINE)
 QUESTION_MAX = 200
 NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
@@ -317,7 +321,7 @@ def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:
                 pulls.append(Pull(number, closes, title, updated))
             continue
         epic = EPIC_RE.search(body)
-        question = QUESTION_RE.search(body)
+        question = QUESTION_RE.search(FENCE_RE.sub("", body))
         issues.append(
             Issue(
                 number,

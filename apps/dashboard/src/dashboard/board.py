@@ -29,6 +29,7 @@ TOP_TICKETS = 5
 DAYS = 7
 WARN_PERCENT, DANGER_PERCENT = 70, 90
 MAIN_THREAD = "Fil principal"
+OUTSIDE = "Ticket hors du dépôt suivi"
 ROLES = {
     "dev-backend": "Développeur",
     "ai-engineer": "Ingénieur IA",
@@ -68,12 +69,15 @@ _DAYS = "SELECT substr(ts, 1, 10), SUM(count) FROM token_usage WHERE ts >= ? GRO
 # token_usage.agent_id est un nom d'agent, jamais joint à events.agent_id (token-usage.md).
 _BY_TICKET = """
 WITH session_issue AS (
-  SELECT session_id, issue, MAX(ts) AS last FROM events WHERE issue IS NOT NULL GROUP BY session_id
+  SELECT session_id, project, issue, MAX(ts) AS last FROM events
+  WHERE issue IS NOT NULL GROUP BY session_id
 )
-SELECT s.issue, SUM(t.count) FROM token_usage AS t JOIN session_issue AS s USING (session_id)
-WHERE t.ts >= ? GROUP BY s.issue ORDER BY 2 DESC, 1 LIMIT ?
+SELECT s.project, s.issue, SUM(t.count)
+FROM token_usage AS t JOIN session_issue AS s USING (session_id)
+WHERE t.ts >= ? GROUP BY s.project, s.issue ORDER BY 3 DESC, 1, 2 LIMIT ?
 """
 
+TicketKey = tuple[str, int]  # (projet, numéro) : un numéro n'a de sens que dans son projet
 Kind = Literal["answer", "review", "decision"]
 State = Literal["working", "idle", "blocked"]
 Level = Literal["ok", "warn", "danger"]
@@ -218,6 +222,16 @@ def _age(value: str | None, now: datetime) -> str:
 
 
 # --- GitHub : à faire et avancement -------------------------------------------------------
+def tracked() -> str:
+    """Projet (nom court du dépôt `VVA_GITHUB_REPO`) dont les tickets sont lus sur GitHub."""
+    return progress.repo().split("/")[1]
+
+
+def _titles(snapshot: progress.Snapshot) -> dict[TicketKey, str]:
+    """Titres des seuls tickets du dépôt suivi : le même numéro ailleurs reste inconnu."""
+    return {(tracked(), i.number): i.title for i in snapshot.issues}
+
+
 def _issue_url(number: int) -> str:
     return f"https://github.com/{progress.repo()}/issues/{number}"
 
@@ -305,8 +319,8 @@ def build_agents(
     events: list[activity.Event], now: datetime, snapshot: progress.Snapshot
 ) -> list[AgentRow]:
     """`events` du plus récent au plus ancien ; actifs d'abord, puis un inactif par rôle."""
-    titles = {i.number: i.title for i in snapshot.issues}
-    blocked = {i.number for i in snapshot.issues if "blocked" in i.labels}
+    titles = _titles(snapshot)
+    blocked = {(tracked(), i.number) for i in snapshot.issues if "blocked" in i.labels}
     oldest: dict[tuple[str | None, str | None], datetime] = {}
     started: dict[tuple[str | None, str | None], datetime] = {}
     for event in events:
@@ -337,17 +351,17 @@ def _agent_row(
     when: datetime,
     now: datetime,
     started: dict[tuple[str | None, str | None], datetime],
-    titles: dict[int, str],
-    blocked: set[int],
+    titles: dict[TicketKey, str],
+    blocked: set[TicketKey],
 ) -> AgentRow:
     active = latest.hook_event_name != "SubagentStop" and now - when < activity.SILENT_AFTER
     state: State = "idle"
     if active:
-        state = "blocked" if latest.issue in blocked else "working"
+        state = "blocked" if (latest.project, latest.issue) in blocked else "working"
     if latest.issue is None:
         ticket = "Aucun ticket indiqué"
     else:
-        ticket = titles.get(latest.issue, "Ticket hors du dépôt suivi")
+        ticket = titles.get((latest.project, latest.issue), OUTSIDE)
     since = started.get((latest.agent_type, latest.agent_id), when)
     return AgentRow(
         role=role(latest.agent_type),
@@ -384,12 +398,12 @@ def _day_label(day: datetime) -> str:
 def build_by_ticket(
     conn: sqlite3.Connection, now: datetime, snapshot: progress.Snapshot
 ) -> list[Bar]:
-    titles = {i.number: i.title for i in snapshot.issues}
+    titles = _titles(snapshot)
     cutoff = (now - timedelta(days=DAYS)).isoformat(timespec="microseconds")
     rows = conn.execute(_BY_TICKET, (cutoff, TOP_TICKETS))
     return bars(
-        (titles.get(int(number), "Ticket hors du dépôt suivi"), int(total))
-        for number, total in rows
+        (titles.get((str(project), int(number)), OUTSIDE), int(total))
+        for project, number, total in rows
     )
 
 
@@ -413,7 +427,7 @@ def build(
     projects = activity.agent_counts(conn)
     project = requested if requested and requested in projects else None
     events = activity.latest_events(conn, progress.EVENT_WINDOW, project)
-    tickets_here = project in (None, progress.repo().split("/")[1])
+    tickets_here = project in (None, tracked())
     shown = snapshot if tickets_here else progress.Snapshot()
     state, minutes = ingestion(conn, now)
     return Board(

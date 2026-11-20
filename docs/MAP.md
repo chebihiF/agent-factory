@@ -25,6 +25,7 @@
 - `apps/dashboard/src/dashboard/__init__.py` — Agents Dashboard.
 - `apps/dashboard/src/dashboard/activity.py` — GET /activity : 100 derniers événements d'agents (contrat : contracts/dashboard-routes.md)
 - `apps/dashboard/src/dashboard/auth.py` — Connexion au dashboard (contrat : contracts/dashboard-routes.md).
+- `apps/dashboard/src/dashboard/board.py` — GET / : tableau de bord unique, en lecture seule (#179, spec docs/design/dashboard-refonte
 - `apps/dashboard/src/dashboard/controls.py` — Pause des agents et plafond de tokens (contrat : contracts/control-api.md).
 - `apps/dashboard/src/dashboard/db.py` — Persistance SQLite des événements d'agents et des tokens (stdlib `sqlite3`).
 - `apps/dashboard/src/dashboard/ingest.py` — POST /api/v1/events : ingestion authentifiée (contrat : contracts/ingest-api.md).
@@ -32,6 +33,8 @@
 - `apps/dashboard/src/dashboard/main.py` — Point d'entrée FastAPI du dashboard (routes : contracts/dashboard-routes.md).
 - `apps/dashboard/src/dashboard/otlp.py` — POST /v1/metrics : tokens Claude Code en OTLP/HTTP JSON (contrat : contracts/token-usage.m
 - `apps/dashboard/src/dashboard/progress.py` — GET /progress et GET /api/v1/progress : avancement du projet et travail des agents (#26).
+- `apps/dashboard/src/dashboard/static/board.css`
+- `apps/dashboard/src/dashboard/static/board.js` — Tableau de bord (#179) : lecture seule. Recharge #contenu par GET toutes les 5 s (sans
 - `apps/dashboard/src/dashboard/static/live.js` — Temps réel : flux SSE /stream (EventSource, reprise automatique par Last-Event-ID).
 - `apps/dashboard/src/dashboard/static/nav.css`
 - `apps/dashboard/src/dashboard/static/progress.js` — Actualisation de /progress toutes les 60 s (sans dépendance : ni CDN, ni bibliothèque).
@@ -39,6 +42,7 @@
 - `apps/dashboard/src/dashboard/stream.py` — GET /stream : flux SSE des événements d'agents (contrat : contracts/dashboard-routes.md).
 - `apps/dashboard/src/dashboard/templates/_nav.html`
 - `apps/dashboard/src/dashboard/templates/activity.html`
+- `apps/dashboard/src/dashboard/templates/board.html`
 - `apps/dashboard/src/dashboard/templates/controls.html`
 - `apps/dashboard/src/dashboard/templates/interactions.html`
 - `apps/dashboard/src/dashboard/templates/login.html`
@@ -47,6 +51,7 @@
 - `apps/dashboard/src/dashboard/tokens.py` — Totaux de tokens par agent et par modèle, sur 24 h et 7 jours glissants.
 - `apps/dashboard/tests/test_activity.py` — Liste d'activité des agents (#5) : 100 derniers événements, vues tableau + flux.
 - `apps/dashboard/tests/test_auth.py` — Connexion au dashboard (#5) : mot de passe, cookie de session signé, limitation.
+- `apps/dashboard/tests/test_board.py` — Tableau de bord unique en lecture seule (#179) : GET /, spec docs/design/dashboard-refonte
 - `apps/dashboard/tests/test_controls.py` — Contrôles pause et plafond de tokens (#8) : /controls, POST protégés (CSRF), /api/v1/contr
 - `apps/dashboard/tests/test_ensure_token.py` — Le script de déploiement crée le jeton d'ingestion une seule fois, en 600.
 - `apps/dashboard/tests/test_ingest.py` — Ingestion authentifiée des événements d'agents (#3).
