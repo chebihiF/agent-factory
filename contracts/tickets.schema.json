@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chebihiF/agent-factory/contracts/tickets.schema.json",
+  "title": "DashboardTicketRow",
+  "description": "Une ligne de la « Liste des tickets » de GET / (#182). Lecture seule, tirée de l'API publique GitHub (issues et PR) : jamais de corps de ticket, de commentaire ni de donnée d'enfant. Épiques, PR, fermés « not planned » et labels ignorés sont exclus.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["number", "title", "status", "sprint", "epic", "url", "pr", "pr_url"],
+  "properties": {
+    "number": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string", "description": "Titre GitHub, toujours échappé à l'affichage." },
+    "status": { "enum": ["backlog", "ready", "in_progress", "review", "delivered"] },
+    "sprint": { "type": ["string", "null"], "description": "Titre du jalon ou label sprint-N ; null : « Sprint non renseigné »." },
+    "epic": { "type": ["string", "null"], "description": "Titre de l'épique citée (« Epic #n » dans le corps) ; null : « Sans épique »." },
+    "url": { "type": "string", "pattern": "^https://github\\.com/[\\w.-]+/[\\w.-]+/issues/\\d+$" },
+    "pr": { "type": ["integer", "null"], "minimum": 1, "description": "PR ouverte qui ferme le ticket (statut review)." },
+    "pr_url": { "type": ["string", "null"], "pattern": "^https://github\\.com/[\\w.-]+/[\\w.-]+/pull/\\d+$" }
+  }
+}

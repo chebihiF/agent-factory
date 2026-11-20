@@ -37,6 +37,9 @@ TITLE_REF_RE = re.compile(r"\(#(\d+)\)")
 QUESTION_RE = re.compile(
     r"^\s*[-*]?\s*Attend l['’]utilisateur\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE
 )
+# Épique du ticket : « Epic #72 », « Épique : #2 » (jamais « Parent : #n », qui est un ticket).
+EPIC_RE = re.compile(r"\b(?:epic|épique)\s*:?\s*#(\d+)", re.IGNORECASE)
+SPRINT_LABEL_RE = re.compile(r"^sprint[\s:_-]+(\d+)$", re.IGNORECASE)
 FENCE_RE = re.compile(r"^\s*(```|~~~).*?^\s*\1", re.DOTALL | re.MULTILINE)
 QUESTION_MAX = 200
 NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
@@ -139,6 +142,8 @@ class Issue:
     labels: frozenset[str]
     updated_at: str | None = None
     question: str | None = None  # ligne « Attend l'utilisateur : … » du corps (#179)
+    epic: int | None = None  # numéro de l'épique citée dans le corps (#182)
+    sprint: str | None = None  # jalon (milestone) ou label « sprint-N » (#182)
 
 
 @dataclass(frozen=True)
@@ -175,6 +180,16 @@ def _labels(item: dict[str, Any]) -> frozenset[str]:
     )
 
 
+def _sprint(item: dict[str, Any], labels: frozenset[str]) -> str | None:
+    """Sprint lisible : titre du jalon, sinon label `sprint-N` (« Sprint N ») ; pas le Project."""
+    milestone = item.get("milestone")
+    title = _text(milestone.get("title")) if isinstance(milestone, dict) else None
+    if title and title.strip():
+        return title.strip()
+    numbers = [int(m.group(1)) for name in labels if (m := SPRINT_LABEL_RE.match(name))]
+    return f"Sprint {min(numbers)}" if numbers else None
+
+
 def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:
     """Sépare tickets et PR ouvertes (`pull_request` présent) d'une même liste `issues`."""
     issues: list[Issue] = []
@@ -191,16 +206,20 @@ def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:
                 closes = int(match.group(1)) if match else None
                 pulls.append(Pull(number, closes, title, updated))
             continue
-        question = QUESTION_RE.search(FENCE_RE.sub("", body))
+        clean = FENCE_RE.sub("", body)
+        question, epic = QUESTION_RE.search(clean), EPIC_RE.search(clean)
+        labels = _labels(item)
         issues.append(
             Issue(
                 number,
                 title,
                 item.get("state") == "closed",
                 item.get("state_reason") == "completed",
-                _labels(item),
+                labels,
                 updated,
                 question.group(1).strip()[:QUESTION_MAX] if question else None,
+                int(epic.group(1)) if epic else None,
+                _sprint(item, labels),
             )
         )
     return tuple(issues), tuple(pulls)

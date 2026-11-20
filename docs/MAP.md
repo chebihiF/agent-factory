@@ -57,6 +57,7 @@
 - `apps/dashboard/tests/test_main.py` — Accueil (tableau de bord, #179), redirections et navigation commune (#58).
 - `apps/dashboard/tests/test_otlp.py` — Réception OTLP/HTTP JSON des métriques de tokens (#7).
 - `apps/dashboard/tests/test_stream.py` — Flux SSE /stream (#6) : session exigée, id croissant, reprise par Last-Event-ID.
+- `apps/dashboard/tests/test_tickets_qa.py` — QA #182 : cas limites de la liste des tickets (lecture seule, unicode, sans jeton, statut)
 - `apps/dashboard/tests/test_tokens.py` — Page /tokens : totaux par agent et par modèle sur 24 h et 7 jours (#7).
 - `contracts/README.md` — contracts
 - `contracts/agent-event.schema.json` — données JSON
@@ -65,6 +66,7 @@
 - `contracts/control-api.md` — Contrôles : pause des agents et plafond de tokens (#8)
 - `contracts/dashboard-routes.md` — Routes du dashboard
 - `contracts/ingest-api.md` — API d'ingestion des événements d'agents
+- `contracts/tickets.schema.json` — données JSON
 - `contracts/token-usage.md` — Métriques de tokens (OTLP/HTTP JSON)
 - `docs/SCRUM.md` — Scrum — fonctionnement de l'équipe (humain + agents)
 - `docs/adr/ADR-002-stack-dashboard.md` — ADR-002 — Stack du dashboard (et des services Python)
