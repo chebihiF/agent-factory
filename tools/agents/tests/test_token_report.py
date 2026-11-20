@@ -328,3 +328,123 @@ def test_failures_are_counted_per_ticket_and_agent(tmp_path: Path) -> None:
 
 def test_git_timeout_leaves_room_for_a_slow_disk() -> None:
     assert tr.GIT_TIMEOUT_S == 1.5
+
+
+# Scénario : durée par ticket (#78)
+
+
+def _timed_events(path: Path, rows: list[tuple[str, str]]) -> None:
+    """rows : (session, heure HH:MM du 18/11 UTC)."""
+    conn = sqlite3.connect(path)
+    with conn:
+        conn.executemany(
+            "INSERT INTO events (event_id, ts, hook_event_name, session_id) VALUES (?, ?, ?, ?)",
+            [
+                (f"t{i}", f"2026-11-18T{hm}:00+00:00", "PostToolUse", s)
+                for i, (s, hm) in enumerate(rows)
+            ],
+        )
+    conn.close()
+
+
+def _runs(path: Path, runs: list[tuple[str, str, str]]) -> Path:
+    """runs : (branche, début HH:MM, fin HH:MM), au format de `gh run list --json`."""
+    data = [
+        {
+            "headBranch": branch,
+            "startedAt": f"2026-11-18T{start}:00Z",
+            "updatedAt": f"2026-11-18T{end}:00Z",
+        }
+        for branch, start, end in runs
+    ]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def _duration_db(tmp_path: Path) -> tuple[Path, Path]:
+    db, journal = _two_tickets(tmp_path)
+    _timed_events(
+        db,
+        [("s42", "10:00"), ("s42", "10:10"), ("s42", "10:20"), ("s42", "11:40")]
+        + [("s43", "10:00"), ("s43", "10:10")],
+    )
+    return db, journal
+
+
+def _report(db: Path, journal: Path, *extra: str) -> list[str]:
+    args = ["report", "--db", str(db), "--journal", str(journal), "--routing", str(ROUTING)]
+    return tr.run([*args, *extra])
+
+
+def test_report_gives_duration_and_ci_share_per_ticket(tmp_path: Path) -> None:
+    db, journal = _duration_db(tmp_path)
+    runs = _runs(tmp_path / "runs.json", [("feat/42-x", "10:20", "10:45")])
+    lines = _report(db, journal, "--ci-json", str(runs))
+    assert len(lines) <= 15
+    t42 = next(line for line in lines if line.startswith("#42 "))
+    t43 = next(line for line in lines if line.startswith("#43 "))
+    assert t42.startswith("#42 1 000 : dev-backend 700, scout 200, (fil principal) 100")
+    assert "1 h 40" in t42 and "CI 25 %" in t42 and "pauses 1 h 20" in t42
+    assert "10 min" in t43 and "CI 0 %" in t43 and "pauses" not in t43
+
+
+def test_duration_without_ci_source_says_so(tmp_path: Path) -> None:
+    db, journal = _duration_db(tmp_path)
+    lines = _report(db, journal)
+    assert any(line.startswith("#42 ") and "1 h 40" in line and "CI n/d" in line for line in lines)
+
+
+def test_ticket_with_events_but_no_tokens_is_listed(tmp_path: Path) -> None:
+    db, journal = _two_tickets(tmp_path)
+    tr.append_record(journal, tr.link_record("s44", 44, "2026-11-18T09:00:00+00:00"))
+    _timed_events(db, [("s44", "10:00"), ("s44", "10:30")])
+    assert any(line.startswith("#44 0") and "30 min" in line for line in _report(db, journal))
+
+
+def test_duration_report_stays_within_15_lines(tmp_path: Path) -> None:
+    points = [(f"s{n}", "dev-backend", "claude-sonnet-5-5", n * 10) for n in range(1, 40)]
+    db = _db(tmp_path / "vva.db", points)
+    journal = _journal(tmp_path / "j.jsonl", {f"s{n}": n for n in range(1, 40)})
+    _timed_events(db, [(f"s{n}", hm) for n in range(1, 40) for hm in ("10:00", "10:05")])
+    assert len(_report(db, journal)) <= 15
+
+
+def test_ci_runs_ignore_malformed_entries_and_other_branches(tmp_path: Path) -> None:
+    good = {"headBranch": "fix/9-a", "startedAt": "2026-11-18T10:00:00Z"}
+    good["updatedAt"] = "2026-11-18T10:05:00Z"
+    runs = [
+        good,
+        {"headBranch": "main", "startedAt": good["startedAt"], "updatedAt": good["updatedAt"]},
+        {"headBranch": "feat/9-b", "startedAt": "nope", "updatedAt": good["updatedAt"]},
+        {"headBranch": "feat/9-c", "startedAt": good["updatedAt"], "updatedAt": good["startedAt"]},
+        {"headBranch": "feat/9-d"},
+        "pas un objet",
+    ]
+    assert tr.ci_waits(runs) == {9: 300.0}
+
+
+def test_gh_failure_gives_no_ci_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))  # aucun `gh`
+    assert tr.fetch_runs("o/r") is None
+
+
+def test_report_with_unreadable_ci_file_still_works(tmp_path: Path) -> None:
+    db, journal = _duration_db(tmp_path)
+    bad = tmp_path / "bad.json"
+    bad.write_text("{pas du json", encoding="utf-8")
+    assert any("CI n/d" in line for line in _report(db, journal, "--ci-json", str(bad)))
+
+
+def test_duration_lines_leak_no_session_nor_branch(tmp_path: Path) -> None:
+    db, journal = _duration_db(tmp_path)
+    runs = _runs(tmp_path / "runs.json", [("feat/42-secret-slug", "10:20", "10:45")])
+    out = "\n".join(_report(db, journal, "--ci-json", str(runs)))
+    assert "secret-slug" not in out and "s42" not in out
+
+
+@pytest.mark.parametrize(
+    ("seconds", "text"),
+    [(0, "0 min"), (600, "10 min"), (3540, "59 min"), (3600, "1 h 00"), (11400, "3 h 10")],
+)
+def test_duration_format(seconds: float, text: str) -> None:
+    assert tr.fmt_duration(seconds) == text
