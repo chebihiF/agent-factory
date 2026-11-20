@@ -325,3 +325,29 @@ def test_badges_use_four_distinct_colours(client: TestClient) -> None:
 def test_live_script_does_not_submit_on_arrow_keys() -> None:
     script = (TEMPLATES.parent / "static" / "live.js").read_text(encoding="utf-8")
     assert "ArrowDown" in script and "Enter" in script  # WCAG 3.2.2 : flèches sans rechargement
+
+
+# #181 : modèle porté par les événements
+def test_agents_table_shows_model(client: TestClient) -> None:
+    seed(1, agent_id="agent-42", model="claude-opus-5-5")
+    html = client.get("/activity").text
+    assert '<th scope="col">Modèle</th>' in table_of(html)
+    assert "<code>claude-opus-5-5</code>" in table_of(html)
+
+
+def test_agent_model_is_latest_known(db_file: Path) -> None:
+    rows = [
+        ("m1", "2026-11-18T10:00:00+00:00", "SubagentStart", "s", "qa", "a", None, "p", 3, "m-old"),
+        ("m2", "2026-11-18T10:00:01+00:00", "PreToolUse", "s", "qa", "a", "Bash", "p", 3, "m-new"),
+        ("m3", "2026-11-18T10:00:02+00:00", "PostToolUse", "s", "qa", "a", "Bash", "p", 3, None),
+    ]
+    with db.connect() as conn:
+        db.insert_events(conn, rows)
+        (agent,) = activity.agents(activity.latest_events(conn))
+    assert (agent.event_id, agent.model, agent.issue) == ("m3", "m-new", 3)
+
+
+def test_agent_without_model_shows_dash(client: TestClient) -> None:
+    seed(1, agent_id="agent-42")
+    row = table_of(client.get("/activity").text).split("agent-42", 1)[1].split("</tr>", 1)[0]
+    assert "<td>—</td>" in row

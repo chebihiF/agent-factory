@@ -19,11 +19,12 @@ _SESSIONS = (
     "SELECT session_id, MIN(ts), MAX(ts), COUNT(*) FROM events "
     "GROUP BY session_id ORDER BY MAX(ts) DESC, MAX(rowid) DESC LIMIT ?"
 )
-_SUBAGENT_EVENTS = (
-    "SELECT session_id, agent_id, agent_type, hook_event_name, ts FROM events "
-    "WHERE hook_event_name IN (?, ?) AND agent_id IS NOT NULL "
-    "AND session_id IN ({marks}) ORDER BY ts, rowid"
+# Tous les événements d'agent : Start/Stop apparient, les autres sont des signes de vie (#181).
+_AGENT_EVENTS = (
+    "SELECT session_id, agent_id, agent_type, hook_event_name, ts, model FROM events "
+    "WHERE agent_id IS NOT NULL AND session_id IN ({marks}) ORDER BY ts, rowid"
 )
+AgentRow = tuple[str, str, str | None, str, str, str | None]
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,6 +48,8 @@ class Subagent:
     agent_type: str | None
     started_at: str | None
     stopped_at: str | None
+    model: str | None = None
+    silent: bool = False  # démarré, sans Stop ni signe de vie depuis `SILENT_AFTER` (#181)
 
     @property
     def duration_s(self) -> float | None:
@@ -57,7 +60,7 @@ class Subagent:
 
     @property
     def running(self) -> bool:
-        return self.started_at is not None and self.stopped_at is None
+        return self.started_at is not None and self.stopped_at is None and not self.silent
 
     @property
     def duration_label(self) -> str:
@@ -95,30 +98,54 @@ class Session:
         return _label(self.last_ts)
 
 
-def _pair_subagents(rows: list[tuple[str, str, str | None, str, str]]) -> dict[str, list[Subagent]]:
-    """Apparie Start/Stop par (session, agent_id) : premier Start, dernier Stop."""
-    merged: dict[tuple[str, str], Subagent] = {}
-    for session_id, agent_id, agent_type, name, ts in rows:
-        key = (session_id, agent_id)
-        current = merged.get(key) or Subagent(agent_id, agent_type, None, None)
-        kind = agent_type or current.agent_type
+@dataclass
+class _Trace:
+    """Événements d'un agent dans une session, lus dans l'ordre chronologique."""
+
+    agent_type: str | None = None
+    started_at: str | None = None
+    stopped_at: str | None = None
+    last_seen: str | None = None
+    model: str | None = None
+
+    def add(self, agent_type: str | None, name: str, ts: str, model: str | None) -> None:
+        self.agent_type = agent_type or self.agent_type
+        self.model = model or self.model
+        self.last_seen = ts
         if name == START:
-            merged[key] = Subagent(agent_id, kind, current.started_at or ts, current.stopped_at)
-        else:
-            merged[key] = Subagent(agent_id, kind, current.started_at, ts)
+            self.started_at = self.started_at or ts
+        elif name == STOP:
+            self.stopped_at = ts
+
+    def silent(self, now: datetime) -> bool:
+        seen = _parse(self.last_seen)
+        open_ended = self.started_at is not None and self.stopped_at is None
+        return open_ended and seen is not None and now - seen > activity.SILENT_AFTER
+
+
+def _pair_subagents(rows: list[AgentRow], now: datetime) -> dict[str, list[Subagent]]:
+    """Apparie Start/Stop par (session, agent_id) : premier Start, dernier Stop."""
+    traces: dict[tuple[str, str], _Trace] = {}
+    for session_id, agent_id, agent_type, name, ts, model in rows:
+        traces.setdefault((session_id, agent_id), _Trace()).add(agent_type, name, ts, model)
     by_session: dict[str, list[Subagent]] = {}
-    for (session_id, _), subagent in merged.items():
+    for (session_id, agent_id), t in traces.items():
+        if t.started_at is None and t.stopped_at is None:
+            continue  # agent sans Start ni Stop : pas un sous-agent
+        subagent = Subagent(
+            agent_id, t.agent_type, t.started_at, t.stopped_at, t.model, t.silent(now)
+        )
         by_session.setdefault(session_id, []).append(subagent)
     return by_session
 
 
-def load_sessions(conn: sqlite3.Connection) -> list[Session]:
+def load_sessions(conn: sqlite3.Connection, now: datetime) -> list[Session]:
     heads = conn.execute(_SESSIONS, (MAX_SESSIONS,)).fetchall()
     if not heads:
         return []
     ids = [row[0] for row in heads]
-    query = _SUBAGENT_EVENTS.format(marks=", ".join("?" for _ in ids))  # noqa: S608 - marqueurs
-    paired = _pair_subagents(conn.execute(query, (START, STOP, *ids)).fetchall())
+    query = _AGENT_EVENTS.format(marks=", ".join("?" for _ in ids))  # noqa: S608 - marqueurs
+    paired = _pair_subagents(conn.execute(query, ids).fetchall(), now)
     return [
         Session(sid, first, last, count, paired.get(sid, [])) for sid, first, last, count in heads
     ]
@@ -127,7 +154,7 @@ def load_sessions(conn: sqlite3.Connection) -> list[Session]:
 def load_page() -> tuple[int, list[Session]]:
     with db.connect() as conn:
         cursor = activity.last_id(conn)  # avant la lecture : aucun trou possible
-        return cursor, load_sessions(conn)
+        return cursor, load_sessions(conn, datetime.now(UTC))
 
 
 def _page(request: Request, status: int, context: dict[str, object]) -> HTMLResponse:

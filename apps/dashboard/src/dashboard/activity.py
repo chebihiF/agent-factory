@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query, Request
@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from dashboard import auth, db
 
 MAX_EVENTS = 100
-_COLUMNS = "event_id, ts, hook_event_name, agent_type, agent_id, tool_name, project"
+_COLUMNS = "event_id, ts, hook_event_name, agent_type, agent_id, tool_name, project, issue, model"
 _ORDER = "ORDER BY ts DESC, rowid DESC LIMIT ?"
 _SELECT = f"SELECT {_COLUMNS} FROM events {_ORDER}"  # noqa: S608 - constantes
 _SELECT_PROJECT = f"SELECT {_COLUMNS} FROM events WHERE project = ? {_ORDER}"  # noqa: S608
@@ -39,6 +39,8 @@ SELECT project, COUNT(*) FROM (
 KNOWN_PROJECTS = (db.DEFAULT_PROJECT, "agent-factory")
 BADGES = ("badge-info", "badge-warn", "badge-ok", "badge-neutral")
 _LAST_ID = "SELECT COALESCE(MAX(rowid), 0) FROM events"
+# Sans signe de vie depuis ce délai, un agent n'est plus « en cours » (#181).
+SILENT_AFTER = timedelta(minutes=30)
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,6 +55,8 @@ class Event:
     agent_id: str | None
     tool_name: str | None
     project: str
+    issue: int | None = None  # absents des événements antérieurs au #181
+    model: str | None = None
 
     @property
     def time_label(self) -> str:
@@ -111,11 +115,21 @@ def last_id(conn: sqlite3.Connection) -> int:
 
 
 def agents(events: list[Event]) -> list[Event]:
-    """Dernier événement de chaque agent (`events` est trié du plus récent au plus ancien)."""
+    """Dernier événement de chaque agent, avec ses derniers ticket et modèle connus.
+
+    `events` est trié du plus récent au plus ancien.
+    """
     latest: dict[tuple[str | None, str | None], Event] = {}
+    issues: dict[tuple[str | None, str | None], int] = {}
+    models: dict[tuple[str | None, str | None], str] = {}
     for event in events:
-        latest.setdefault((event.agent_type, event.agent_id), event)
-    return list(latest.values())
+        key = (event.agent_type, event.agent_id)
+        latest.setdefault(key, event)
+        if event.issue is not None:
+            issues.setdefault(key, event.issue)
+        if event.model:
+            models.setdefault(key, event.model)
+    return [replace(e, issue=issues.get(k), model=models.get(k)) for k, e in latest.items()]
 
 
 def load_last_id() -> int:

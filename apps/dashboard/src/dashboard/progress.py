@@ -17,7 +17,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -38,7 +38,7 @@ MAX_PAGES = 5
 HTTP_TIMEOUT_S = 5.0
 MAX_BODY_BYTES = 4 * 1024 * 1024
 EVENT_WINDOW = 500
-STALE_AFTER = timedelta(minutes=30)
+STALE_AFTER = activity.SILENT_AFTER
 TIMELINE_MAX = 10
 MAX_INACTIVE = 5
 NO_EPIC_ID = 0
@@ -55,7 +55,7 @@ NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 
 Step = Literal["dev", "review", "qa", "pr", "deploy"]
-# Rôles d'agents (tools/agents) : le modèle et l'étape ne figurent pas dans les événements.
+# Rôles d'agents (tools/agents) : modèle par défaut si l'événement n'en porte pas (#181), et étape.
 AGENT_MODELS = {
     "dev-backend": "claude-sonnet-5-5",
     "ai-engineer": "claude-sonnet-5-5",
@@ -492,8 +492,11 @@ def shown(agents: list[Agent]) -> list[Agent]:
 
 
 def build_agents(events: list[activity.Event], now: datetime) -> list[Agent]:
-    """`events` est trié du plus récent au plus ancien. Le ticket n'est pas dans les événements."""
+    """`events` est trié du plus récent au plus ancien ; ticket et modèle : derniers connus."""
     last: dict[tuple[str, str | None], tuple[activity.Event, datetime]] = {}
+    known = {
+        (e.agent_type, e.agent_id): e for e in activity.agents(events) if e.agent_type is not None
+    }
     started: dict[tuple[str, str | None], datetime] = {}
     oldest: dict[tuple[str, str | None], datetime] = {}
     for event in events:
@@ -513,8 +516,8 @@ def build_agents(events: list[activity.Event], now: datetime) -> list[Agent]:
         agents.append(
             Agent(
                 name=key[0],
-                model=AGENT_MODELS.get(key[0]),
-                issue=None,
+                model=known[key].model or AGENT_MODELS.get(key[0]),
+                issue=known[key].issue,
                 step=_step(key[0], event.tool_name),
                 since=since.isoformat(),
                 active=active,
