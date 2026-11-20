@@ -73,6 +73,7 @@
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
 - `docs/design/activity.md` — Écran « Activité des agents »
+- `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
 - `hooks/lint_file.sh` — PostToolUse(Edit|Write) : corrige puis vérifie le fichier Python modifié. Silencieux si OK
 - `hooks/log_event.sh` — SubagentStart/SubagentStop/PostToolUse : journal JSONL local, source du dashboard (Sprint 
