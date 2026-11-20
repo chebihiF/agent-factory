@@ -19,10 +19,25 @@ _COLUMNS = "event_id, ts, hook_event_name, agent_type, agent_id, tool_name, proj
 _ORDER = "ORDER BY ts DESC, rowid DESC LIMIT ?"
 _SELECT = f"SELECT {_COLUMNS} FROM events {_ORDER}"  # noqa: S608 - constantes
 _SELECT_PROJECT = f"SELECT {_COLUMNS} FROM events WHERE project = ? {_ORDER}"  # noqa: S608
-_PROJECTS = "SELECT DISTINCT project FROM events ORDER BY project"
+# Agents distincts par projet, sur la fenêtre des MAX_EVENTS derniers événements de ce projet (celle
+# de la vue filtrée) ; la ligne '' (« Tous ») compte sur les MAX_EVENTS derniers événements toutes
+# origines confondues (celle de la vue « Tous ») : elle peut donc être inférieure à la somme.
+_COUNTS = """
+WITH ranked AS (
+  SELECT project, agent_type, agent_id,
+         ROW_NUMBER() OVER (PARTITION BY project ORDER BY ts DESC, rowid DESC) AS in_project,
+         ROW_NUMBER() OVER (ORDER BY ts DESC, rowid DESC) AS overall
+  FROM events
+)
+SELECT project, COUNT(*) FROM (
+  SELECT DISTINCT project, agent_type, agent_id FROM ranked WHERE in_project <= :limit
+  UNION ALL
+  SELECT DISTINCT '', agent_type, agent_id FROM ranked WHERE overall <= :limit
+) GROUP BY project
+"""
 # Projets toujours proposés par le filtre (#68), même sans événement ; les autres s'ajoutent.
 KNOWN_PROJECTS = (db.DEFAULT_PROJECT, "agent-factory")
-BADGES = ("badge-info", "badge-warn")
+BADGES = ("badge-info", "badge-warn", "badge-ok", "badge-neutral")
 _LAST_ID = "SELECT COALESCE(MAX(rowid), 0) FROM events"
 
 log = logging.getLogger(__name__)
@@ -55,9 +70,12 @@ def latest_events(
     return [Event(*row) for row in conn.execute(_SELECT_PROJECT, (project, limit))]
 
 
-def project_names(conn: sqlite3.Connection) -> list[str]:
-    stored = [str(row[0]) for row in conn.execute(_PROJECTS)]
-    return [*KNOWN_PROJECTS, *(name for name in stored if name not in KNOWN_PROJECTS)]
+def agent_counts(conn: sqlite3.Connection, limit: int = MAX_EVENTS) -> dict[str, int]:
+    """Agents par projet en une requête ; "" = « Tous ». Projets connus toujours présents."""
+    found = {str(project): int(n) for project, n in conn.execute(_COUNTS, {"limit": limit})}
+    stored = sorted(name for name in found if name and name not in KNOWN_PROJECTS)
+    names = ("", *KNOWN_PROJECTS, *stored)
+    return {name: found.get(name, 0) for name in names}
 
 
 @dataclass(frozen=True)
@@ -75,15 +93,16 @@ class View:
         return {name: BADGES[i % len(BADGES)] for i, name in enumerate(names)}
 
 
+def load_view_from(conn: sqlite3.Connection, requested: str) -> View:
+    counts = agent_counts(conn)
+    project = requested if requested and requested in counts else None
+    events = latest_events(conn) if project is None else latest_events(conn, MAX_EVENTS, project)
+    return View(events, project, counts, unknown=bool(requested) and project is None)
+
+
 def load_view(requested: str) -> View:
     with db.connect() as conn:
-        everything = latest_events(conn)
-        names = project_names(conn)
-        counts = {"": len(agents(everything))}
-        counts |= {name: len(agents(latest_events(conn, MAX_EVENTS, name))) for name in names}
-        project = requested if requested in names else None
-        events = everything if project is None else latest_events(conn, MAX_EVENTS, project)
-    return View(events, project, counts, unknown=bool(requested) and project is None)
+        return load_view_from(conn, requested)
 
 
 def last_id(conn: sqlite3.Connection) -> int:

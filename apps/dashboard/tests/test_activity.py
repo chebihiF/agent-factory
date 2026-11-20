@@ -270,3 +270,52 @@ def test_live_script_submits_filter_and_keeps_it_on_stream() -> None:
     assert "form[data-autosubmit]" in script and "requestSubmit" in script
     assert "ev.project === project" in script  # le flux SSE respecte le filtre
     assert "innerHTML" not in script
+
+
+# #68 revue : un seul GROUP BY, « Tous » sur la fenêtre affichée, plus de couleurs de pastilles
+def test_counts_use_one_grouped_query(db_file: Path) -> None:
+    seed_projects(viral_video_agents=2, agent_factory=1, autre=1)
+    statements: list[str] = []
+    with db.connect() as conn:
+        conn.set_trace_callback(statements.append)
+        view = activity.load_view_from(conn, "")
+    selects = [s for s in statements if s.lstrip().upper().startswith(("SELECT", "WITH"))]
+    assert len(selects) == 2  # compteurs (un GROUP BY) + événements ; plus de DISTINCT par projet
+    assert sum("GROUP BY" in s for s in selects) == 1
+    assert view.counts == {"": 4, "viral-video-agents": 2, "agent-factory": 1, "autre": 1}
+
+
+def test_counts_match_the_windows_shown(db_file: Path) -> None:
+    rows = [
+        (
+            f"x-{i}",
+            f"2026-11-19T10:{i // 60:02d}:{i % 60:02d}+00:00",
+            "Stop",
+            "s",
+            "qa",
+            f"a-{i}",
+            None,
+            "autre",
+        )  # noqa: E501
+        for i in range(120)
+    ]
+    with db.connect() as conn:
+        db.insert_events(conn, rows)
+        view = activity.load_view_from(conn, "")
+        in_project = activity.agents(activity.latest_events(conn, project="autre"))
+    assert view.counts[""] == len(activity.agents(view.events)) == 100  # fenêtre de la vue « Tous »
+    assert view.counts["autre"] == len(in_project) == 100  # fenêtre de la vue filtrée
+
+
+def test_badges_use_four_distinct_colours(client: TestClient) -> None:
+    seed_projects(viral_video_agents=1, agent_factory=1, autre=1, encore=1)
+    html = client.get("/activity").text
+    used = set(re.findall(r'class="badge (badge-[a-z0-9-]+)"', table_of(html)))
+    assert len(used) == 4
+    css = (TEMPLATES / "activity.html").read_text(encoding="utf-8")
+    assert all(f".{name} {{" in css for name in used)
+
+
+def test_live_script_does_not_submit_on_arrow_keys() -> None:
+    script = (TEMPLATES.parent / "static" / "live.js").read_text(encoding="utf-8")
+    assert "ArrowDown" in script and "Enter" in script  # WCAG 3.2.2 : flèches sans rechargement
