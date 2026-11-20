@@ -69,7 +69,7 @@
 - `docs/adr/ADR-003-memoire-agents.md` — ADR-003 — Mémoire des agents : mémoire locale vs ADR
 - `docs/adr/ADR-004-separation-usine-produit.md` — ADR-004 — Séparer l'usine d'agents (A) et l'application vidéo (B)
 - `docs/agents-memory.md` — Mémoire des agents — conventions
-- `docs/agents.md` — Agents : mesure des tokens et routage des modèles (#19)
+- `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
 - `docs/design/activity.md` — Écran « Activité des agents »
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
@@ -99,15 +99,19 @@
 - `pyproject.toml`
 - `rules/session-agents.md` — Règles de session des agents (enchaînement et passation)
 - `rules/tech-lead.md` — Consignes génériques du tech lead (à recopier dans le fichier de consignes local du projet
+- `scripts/install_agents.py` — Installe agents, skills, hooks et règles de l'usine dans le `.claude/` local d'un projet.
+- `scripts/test_install_agents.py` — install_agents.py : installation locale des agents, skills et hooks dans un projet cible.
 - `skills/deploy-check/SKILL.md` — deploy-check
 - `skills/sprint/SKILL.md` — sprint
 - `skills/ticket/SKILL.md` — ticket
+- `skills/ticket/checklist.md` — Checklist /ticket — Definition of Done
 - `tools/agents/bin/handoff.sh` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/bin/token-report.sh` — Tokens par ticket, agent et modèle, ≤ 15 lignes, compteurs seuls (#19). Voir docs/agents.m
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
 - `tools/agents/tests/test_session_rules.py` — Règle de session des agents (#178) : contenu, bornes et référence par le tech lead.
+- `tools/agents/tests/test_skills.py` — Skills versionnés /ticket, /sprint, /deploy-check (#15, #16) : lecture des fichiers seulem
 - `tools/agents/tests/test_token_report.py` — Mesure des tokens par ticket et routage des modèles (#19).
 - `tools/agents/token_report.py` — Tokens par ticket, agent et modèle ; routage des modèles (#19). Voir docs/agents.md.
 - `tools/telemetry/README.md` — Télémétrie des agents (émetteur Mac, #4)

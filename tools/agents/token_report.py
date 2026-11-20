@@ -36,6 +36,10 @@ NAME = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 REASON = re.compile(r"^[\w .:-]{1,64}$")
 TOOL_HOOKS = ("PostToolUse", "PostToolUseFailure")
 GIT_TIMEOUT_S = 1.5
+GH_TIMEOUT_S = 15.0
+CI_LIMIT = 200  # exécutions lues par `gh run list` : au-delà, la liste est tronquée
+PAUSE_GAP_S = 1800  # silence d'un ticket au-delà duquel on parle de pause (quota ou attente)
+REPO = re.compile(r"^[\w.-]{1,100}/[\w.-]{1,100}$")
 
 
 @dataclass(frozen=True)
@@ -210,6 +214,7 @@ USAGE_SQL = (
     "SELECT session_id, ts, agent_id, model, SUM(count) FROM token_usage"
     " GROUP BY session_id, ts, agent_id, model"
 )
+ALL_EVENTS_SQL = "SELECT session_id, ts FROM events"
 EVENTS_SQL = (
     "SELECT session_id, ts, hook_event_name FROM events"
     " WHERE hook_event_name IN ('PostToolUse', 'PostToolUseFailure')"
@@ -237,6 +242,116 @@ class Tickets:
                 break
             chosen = ticket
         return chosen
+
+
+# --- durée par ticket (#78) -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Span:
+    """Délai de bout en bout d'un ticket : premier -> dernier événement, et pauses dedans."""
+
+    total: float
+    pauses: float
+    start: datetime = EPOCH
+    end: datetime = EPOCH
+
+
+def fmt_duration(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60:02d}"
+
+
+def spans(rows: Sequence[tuple[Any, ...]], tickets: Tickets) -> dict[int, Span]:
+    """Par ticket : étendue des horodatages d'événements ; pauses = silences > PAUSE_GAP_S."""
+    stamps: dict[int, list[datetime]] = defaultdict(list)
+    for session, ts in rows:
+        moment, ticket = _ts(str(ts)), tickets.at(str(session), str(ts))
+        if ticket is not None and moment != EPOCH:
+            stamps[ticket].append(moment)
+    result = {}
+    for ticket, moments in stamps.items():
+        moments.sort()
+        gaps = [(moments[i + 1] - moments[i]).total_seconds() for i in range(len(moments) - 1)]
+        result[ticket] = Span(
+            (moments[-1] - moments[0]).total_seconds(),
+            sum(g for g in gaps if g > PAUSE_GAP_S),
+            moments[0],
+            moments[-1],
+        )
+    return result
+
+
+def _union_seconds(intervals: list[tuple[datetime, datetime]]) -> float:
+    """Durée couverte par l'union d'intervalles (CI et release parallèles comptés une fois)."""
+    total, current_end = 0.0, EPOCH
+    for start, end in sorted(intervals):
+        start = max(start, current_end)
+        if end > start:
+            total += (end - start).total_seconds()
+            current_end = end
+    return total
+
+
+def ci_waits(runs: Iterable[Any], durations: dict[int, Span]) -> dict[int, float]:
+    """Secondes de CI par ticket, d'après `gh run list --json headBranch,startedAt,updatedAt`.
+
+    Union des intervalles des exécutions (workflows parallèles comptés une fois), coupée à la
+    période du ticket (`Span`) ; un ticket absent de `durations` (donc du journal) est ignoré.
+    Le journal ne dit pas de quel dépôt vient un numéro : deux dépôts aux numéros qui se
+    chevauchent restent indiscernables, d'où `--ci-repo` = le dépôt des tickets suivis.
+    Seuls le numéro (branche `feat/<n>-…`) et les durées sont retenus ; entrées illisibles,
+    branches hors convention et durées négatives sont ignorées.
+    """
+    found: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        ticket = ticket_of_branch(str(run.get("headBranch")))
+        start, end = _ts(str(run.get("startedAt"))), _ts(str(run.get("updatedAt")))
+        span = durations.get(ticket) if ticket is not None else None
+        if span is None or EPOCH in (start, end):
+            continue
+        start, end = max(start, span.start), min(end, span.end)
+        if end > start and ticket is not None:
+            found[ticket].append((start, end))
+    return {ticket: _union_seconds(parts) for ticket, parts in found.items()}
+
+
+def fetch_runs(repo: str) -> list[Any] | None:
+    """Exécutions de CI via `gh` (réseau, à la demande). None si `gh` échoue : jamais bloquant."""
+    cmd = ["gh", "run", "list", "-R", repo, "--limit", str(CI_LIMIT)]
+    cmd += ["--json", "headBranch,startedAt,updatedAt"]
+    try:
+        out = subprocess.run(  # noqa: S603 - gh du poste, dépôt validé par REPO
+            cmd, capture_output=True, text=True, timeout=GH_TIMEOUT_S, check=True
+        )
+        runs = json.loads(out.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return runs if isinstance(runs, list) else None
+
+
+def load_runs(path: Path) -> list[Any] | None:
+    try:
+        runs = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return runs if isinstance(runs, list) else None
+
+
+def _duration_suffix(span: Span | None, ci: dict[int, float] | None, ticket: int) -> str:
+    if span is None:
+        return ""
+    if ci is None:
+        wait = "CI n/d"
+    else:
+        share = round(100 * min(ci.get(ticket, 0.0) / span.total, 1)) if span.total > 0 else 0
+        wait = f"CI {share} %"
+    pauses = f", pauses {fmt_duration(span.pauses)}" if span.pauses > 0 else ""
+    return f" · {fmt_duration(span.total)}, {wait}{pauses}"
 
 
 # --- rapport ------------------------------------------------------------------------------
@@ -284,12 +399,18 @@ def aggregate(rows: Sequence[tuple[Any, ...]], tickets: Tickets) -> Totals:
     return totals
 
 
-def _ticket_lines(totals: Totals) -> list[str]:
-    ranked = sorted(
-        ((t, c) for t, c in totals.tickets.items() if t is not None),
-        key=lambda item: -sum(item[1].values()),
-    )
-    lines = [f"#{t} {_fmt(sum(c.values()))} : {_top(c, 4, ', ')}" for t, c in ranked[:MAX_TICKETS]]
+def _ticket_lines(
+    totals: Totals, durations: dict[int, Span], ci: dict[int, float] | None
+) -> list[str]:
+    per_ticket = {t: c for t, c in totals.tickets.items() if t is not None}
+    for ticket in durations:
+        per_ticket.setdefault(ticket, Counter())
+    ranked = sorted(per_ticket.items(), key=lambda item: (-sum(item[1].values()), item[0]))
+    lines = []
+    for ticket, counts in ranked[:MAX_TICKETS]:
+        split = f" : {_top(counts, 4, ', ')}" if counts else ""
+        suffix = _duration_suffix(durations.get(ticket), ci, ticket)
+        lines.append(f"#{ticket} {_fmt(sum(counts.values()))}{split}{suffix}")
     others = ranked[MAX_TICKETS:]
     if others:
         rest = sum(sum(c.values()) for _, c in others)
@@ -342,15 +463,19 @@ def _promotion_line(totals: Totals, records: Sequence[dict[str, Any]], routing: 
     return "Promotions Opus : " + (" · ".join(parts[:6]) or "aucune")
 
 
-def report(db: Path, journal: Path, routing: Routing) -> list[str]:
+def report(
+    db: Path, journal: Path, routing: Routing, runs: Iterable[Any] | None = None
+) -> list[str]:
     records = read_records(journal)
     tickets = Tickets(records)
     totals = aggregate(_query(db, USAGE_SQL), tickets)
     attached = len([t for t in totals.tickets if t is not None])
+    durations = spans(_query(db, ALL_EVENTS_SQL), tickets)
+    ci = None if runs is None else ci_waits(runs, durations)
     lines = [
         f"Tokens : {_fmt(sum(totals.agents.values()))} sur {attached} tickets"
         f" ({len(totals.sessions)} sessions), compteurs seuls",
-        *_ticket_lines(totals),
+        *_ticket_lines(totals, durations, ci),
         "Agents : " + _top(totals.agents, 6, " · "),
         "Modèles : " + _top(totals.models, 4, " · "),
         _failure_line(_query(db, EVENTS_SQL), tickets),
@@ -371,6 +496,8 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     rep = sub.add_parser("report", parents=[common], help="rapport ≤ 15 lignes (défaut)")
     rep.add_argument("--db", type=Path, default=Path(os.environ.get("VVA_DB_PATH") or "vva.db"))
+    rep.add_argument("--ci-json", type=Path, help="sortie de `gh run list --json …` (hors ligne)")
+    rep.add_argument("--ci-repo", help="OWNER/REPO : attente CI lue via `gh` (réseau)")
     sub.add_parser("link", parents=[common], help="hook : JSON du hook sur stdin")
     fail = sub.add_parser("fail", parents=[common], help="noter un échec sur un ticket")
     fail.add_argument("ticket", type=int)
@@ -444,7 +571,23 @@ def run(argv: list[str]) -> list[str]:
         return _fail(args)
     if args.command == "route":
         return _route(args)
-    return report(args.db, args.journal, load_routing(args.routing))
+    return report(args.db, args.journal, load_routing(args.routing), _ci(args))
+
+
+def _ci(args: argparse.Namespace) -> list[Any] | None:
+    """Exécutions de CI, ou None (source absente ou illisible : « CI n/d »)."""
+    if args.ci_repo is not None and not REPO.match(args.ci_repo):
+        raise SystemExit(f"token-report : dépôt invalide : {args.ci_repo!r}")
+    if args.ci_json is not None:
+        return load_runs(args.ci_json)
+    runs = fetch_runs(args.ci_repo) if args.ci_repo else None
+    if runs is not None and len(runs) >= CI_LIMIT:
+        print(
+            f"token-report : {len(runs)} exécutions lues, liste probablement tronquée "
+            "(attente CI sous-estimée pour les tickets anciens)",
+            file=sys.stderr,
+        )
+    return runs
 
 
 def main() -> int:

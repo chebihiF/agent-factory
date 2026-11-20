@@ -1,3 +1,39 @@
+# Installer les agents dans un projet (#71)
+
+Les agents, skills, hooks et règles de l'usine vivent ici (`agents/`, `skills/`, `hooks/`,
+`rules/`). Un projet les utilise **sans les commiter** : ils sont copiés dans son `.claude/`
+local.
+
+```sh
+make install-agents PROJECT=../mon-projet                        # = scripts/install_agents.py ../mon-projet
+make install-agents PROJECT=../mon-projet OVERLAY=surcouche.md   # avec la partie propre au projet
+```
+
+Ce que fait la commande (stdlib, Python 3.9 ou 3.12) :
+
+| Étape | Détail |
+|-------|--------|
+| Contrôle | refuse une cible inexistante, hors dépôt git, qui n'est pas la racine du dépôt, ou dont `git ls-files -- .claude CLAUDE.md` n'est pas vide (`git rm --cached` d'abord) ; refuse un `.claude` ou `CLAUDE.md` lien symbolique ; message distinct si `git` est introuvable |
+| Exclusion | ajoute `.claude/` et `CLAUDE.md` à `<cible>/.git/info/exclude` (avant toute copie, sans doublon, contenu existant conservé ; fonctionne dans un worktree) |
+| Copie | `agents/`, `skills/`, `hooks/`, `rules/` vers `<cible>/.claude/<même nom>/` ; liens symboliques ignorés côté source, refusés côté cible (fichier ou dossier parent), destination toujours sous `<cible>/.claude/` |
+| Manifeste | `<cible>/.claude/.agent-factory-manifest` liste les fichiers installés ; à l'installation suivante, ceux qui ne font plus partie de l'usine sont retirés (dossiers vidés compris), jamais un fichier absent du manifeste |
+| Surcouche | `--overlay <fichier>` : le fichier est inséré dans un bloc balisé `agent-factory:overlay` de `<cible>/CLAUDE.md` (créé si absent ; une surcouche qui contient elle-même les marqueurs est refusée, un bloc existant sans marqueur de fin aussi) |
+| Git | aucun `git add`, aucun commit dans la cible |
+
+- **Idempotente** : relancer met à jour les fichiers de l'usine (ils écrasent la version locale) ;
+  les fichiers propres au projet (`settings.json`, un agent maison, le reste de `CLAUDE.md`) ne
+  sont jamais touchés ni supprimés. Le bloc de surcouche est remplacé, pas dupliqué.
+- **Surcouche** : tout ce qui est propre au projet (machines, chemins, dépôt, règles produit)
+  va dans un fichier du projet, hors de l'usine. Aucun secret dedans : `CLAUDE.md` reste local,
+  mais la surcouche peut être copiée par erreur ailleurs.
+- `rules/tech-lead.md` est installé dans `.claude/rules/` ; le `CLAUDE.md` du projet y renvoie
+  ou le recopie (la surcouche s'y ajoute).
+- **Limite** : la cible `PROJECT` ne doit pas contenir d'apostrophe (`'`) avec `make` (le chemin est
+  entre apostrophes dans le Makefile) ; sinon appeler directement
+  `python3 scripts/install_agents.py "<chemin>"`.
+- Le câblage des hooks (`.claude/settings.json`) reste manuel : gabarit `hooks/settings.example.json`.
+- Vérification : `git -C <cible> status --porcelain` ne montre rien, `git -C <cible> ls-files .claude CLAUDE.md` est vide.
+
 # Agents : mesure des tokens et routage des modèles (#19)
 
 Outils : `tools/agents/bin/token-report.sh` (enveloppe) et `tools/agents/token_report.py`
@@ -15,11 +51,42 @@ d'outils par ticket, tickets au-dessus de 2× la médiane, promotions vers Opus.
 prompt, de contenu ni d'identifiant de session ; un nom d'agent ou de modèle hors
 `[A-Za-z0-9._:-]{1,64}` est affiché `?`.
 
+### Durée par ticket (#78)
+
+Chaque ligne de ticket se termine par `· <durée>, CI <part> %[, pauses <durée>]`, par exemple
+`#42 1 000 : dev-backend 700 · 3 h 10, CI 25 %, pauses 1 h 20`.
+
+- **Durée** : du premier au dernier événement de télémétrie (table `events`, tous types) du
+  ticket, rattaché par session comme les tokens. C'est une approximation de « En cours -> Livré »
+  (la carte du Project n'est pas lue). Un ticket avec événements mais sans tokens est listé (`0`).
+- **Pauses** : somme des silences de plus de 30 minutes entre deux événements du ticket (quota
+  atteint ou attente humaine : la télémétrie ne les distingue pas).
+- **Attente CI** : union des intervalles des exécutions (`startedAt` -> `updatedAt`, CI et
+  release en parallèle comptés une fois) des branches `<type>/<n>-…`, coupée à la période du
+  ticket (premier -> dernier événement), rapportée à sa durée. Sans source : `CI n/d`. Seuls le
+  numéro de ticket et les durées sont retenus, jamais le nom de branche ni de contenu.
+- **Limite connue** : le journal ne mémorise pas le dépôt d'un ticket. `--ci-repo` doit donc
+  être le dépôt des tickets suivis ; si deux dépôts ont des numéros qui se chevauchent, seule la
+  période du ticket écarte les exécutions de l'autre. Les tickets absents du journal sont ignorés.
+- `gh run list` est limité à 200 exécutions : si la liste est pleine, un avertissement sur
+  stderr signale que l'attente CI des tickets anciens peut être sous-estimée.
+
+```sh
+tools/agents/bin/token-report.sh --db vva.db --ci-repo OWNER/REPO   # `gh run list` (réseau)
+gh run list -R OWNER/REPO --limit 200 --json headBranch,startedAt,updatedAt > runs.json
+tools/agents/bin/token-report.sh --db vva.db --ci-json runs.json    # hors ligne
+```
+
+Le rapport reste local et sans réseau par défaut ; `gh` n'est appelé qu'avec `--ci-repo`
+(échec de `gh` : `CI n/d`, jamais d'erreur).
+
 ### Sources
 
 | Donnée | Source | Note |
 |--------|--------|------|
 | tokens par session, agent, modèle | table `token_usage` ([contrat](../contracts/token-usage.md)) | `agent_id` NULL = fil principal |
+| durée et pauses par ticket | table `events` (horodatages seuls) | voir « Durée par ticket » |
+| attente CI par ticket | `gh run list --json headBranch,startedAt,updatedAt` | facultatif, `--ci-repo` ou `--ci-json` |
 | appels et échecs d'outils | table `events` ([contrat](../contracts/agent-event.schema.json)) | `PostToolUse`, `PostToolUseFailure` |
 | session -> ticket, échecs notés, promotions | journal local `~/.vva/agents-journal.jsonl` ([contrat](../contracts/agents-journal.schema.json)) | `VVA_AGENTS_JOURNAL` pour un autre chemin |
 
@@ -92,6 +159,7 @@ pour le label `complex` (agents d'implémentation) et le `reviewer`.
 
 ```sh
 tools/agents/bin/handoff.sh check                      # hook UserPromptSubmit (JSON sur stdin)
+tools/agents/bin/handoff.sh check --threshold 120000   # seuil en tokens (défaut 150000)
 tools/agents/bin/handoff.sh post  --note-file note.md   # valider et poster dans #21
 tools/agents/bin/handoff.sh latest                      # dernière note marquée de #21
 tools/agents/bin/handoff.sh relay --note-file note.md   # post, puis session neuve
@@ -99,7 +167,8 @@ tools/agents/bin/handoff.sh relay --note-file note.md   # post, puis session neu
 
 - **Seuil** : contexte = dernier `usage` du fil principal du transcript (input + cache lu +
   cache créé ; les sous-agents sont ignorés). L'alerte douce à 100 000 tokens est gérée ailleurs :
-  `check` ne fait rien en dessous de **150 000**. Au seuil, une seule fois par session (marqueur
+  `check` ne fait rien en dessous de **150 000** (réglable : `--threshold <tokens>`, à placer
+  dans la commande du hook). Au seuil, une seule fois par session (marqueur
   `~/.vva/handoff/<session>.done`, `VVA_HANDOFF_DIR`), il émet `additionalContext` : le tech lead
   écrit la note puis lance `relay`. `check` ne bloque jamais (exit 0, silencieux si erreur).
 - **Note** (contrat) : ≤ 10 lignes, rubriques `Fait`, `Reste`, `Fichiers clés`, `Pièges` en début
@@ -119,6 +188,30 @@ Câblage à faire par le parent (`.claude/settings.json`, local, jamais commité
 "UserPromptSubmit": [{ "hooks": [{ "type": "command", "timeout": 5,
   "command": "\"$CLAUDE_PROJECT_DIR/tools/agents/bin/handoff.sh\" check" }] }]
 ```
+
+## Skills /ticket, /sprint, /deploy-check (#15, #16)
+
+Versions génériques, versionnées hors `.claude/` ; chaque projet les copie dans son
+`.claude/skills/` local (jamais commité) :
+
+| Skill | Fichier | Contrat |
+|-------|---------|---------|
+| `/ticket <n>` | [`skills/ticket/SKILL.md`](../skills/ticket/SKILL.md), DoD [`skills/ticket/checklist.md`](../skills/ticket/checklist.md) | 8 étapes ; `stop-agents` → rien n'est modifié ; 2 échecs de `make check` → carte « En cours », aucun merge ; PR `Closes #<n>` par le bot, merge squash, cartes En cours → Revue → Livré |
+| `/sprint` | [`skills/sprint/SKILL.md`](../skills/sprint/SKILL.md) | `status` ≤ 15 lignes par colonne ; `move <n> <colonne>` ; `run` ; `next` (alias `close`) : itération suivante de 7 jours, cartes non livrées reportées |
+| `/deploy-check` | [`skills/deploy-check/SKILL.md`](../skills/deploy-check/SKILL.md) | version servie vs dernier merge, smoke test en lecture seule ; KO → bug `type:bug` P0 automatique, rollback par le pipeline proposé puis lancé après confirmation explicite du propriétaire |
+
+`checklist.md` est une copie de la DoD de [`SCRUM.md`](SCRUM.md), qui reste la source de vérité.
+
+**Surcouche du projet** (locale, jamais commitée, ni ici ni chez le projet) : dépôt, propriétaire
+et numéro du Project, compte bot `<bot>`, issue journal, postes du pool, agents propres au
+projet (délégation de l'étape 3 de `/ticket`), URL de prod et services voisins de
+`/deploy-check`. Elle se réapplique dans le `.claude/` local après copie des skills.
+
+`tools/agents/tests/test_skills.py` vérifie le front-matter (`name` = dossier, `description`
+avec `Usage /<name>`), le contrat et les scénarios Gherkin de chaque skill, l'égalité
+checklist = DoD, et qu'aucun fichier générique (`skills/`, `agents/`, `rules/`, `hooks/`, cette
+page) ne contient de valeur propre à un projet (`git grep` : adresse IP, chemin machine, nom
+d'hôte du serveur, machine GPU, poste nommé, dépôt du produit) ni de secret.
 
 ## Limites
 

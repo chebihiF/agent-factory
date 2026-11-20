@@ -1,6 +1,7 @@
 # Règles de session des agents (enchaînement et passation)
 
-Source de vérité versionnée, installée dans `.claude/rules/` par `make install-agents` (#71).
+Source de vérité versionnée (`rules/session-agents.md`), installée dans le projet cible sous
+`.claude/rules/session-agents.md` par `make install-agents` (#71).
 Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
 
 ## 1. Enchaînement des tickets
@@ -16,18 +17,21 @@ Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
 
 ## 2. Passation au seuil de contexte
 
-- Seuil : 150000 tokens de contexte (défaut). Configurable : option `--threshold` de
-  `handoff.sh check` dans la commande du hook (`docs/agents.md`).
-- Au seuil, toute session (tech lead comme sous-agent) :
-  1. écrit une note de 10 lignes maximum (fait / reste / fichiers clés / pièges), au format
-     validé par `tools/agents/bin/handoff.sh` (#83) : ni secret, ni donnée d'enfant ;
-  2. la poste dans #21 (`handoff.sh post`) ;
-  3. ouvre une session neuve qui ne lit que cette note (`handoff.sh relay`), pas l'historique ;
-  4. ferme l'ancienne session.
+- Seuil : 150000 tokens de contexte (défaut). Configurable : option `--threshold <tokens>` de
+  `handoff.sh check`, dans la commande du hook (`docs/agents.md`).
+- Au seuil, le tech lead (le hook ne mesure que le fil principal) écrit une
+  note de 10 lignes maximum (fait / reste / fichiers clés / pièges), au format validé par
+  `tools/agents/bin/handoff.sh post` (#83) : ni secret, ni donnée d'enfant ; il la poste dans #21.
+- La relève est une session indépendante, lancée par le parent humain ; à défaut, `start_session`
+  puis archivage immédiat de la sortante (accord du parent, §3). Pas de chaîne parent/enfant
+  de sessions, pas de `handoff.sh relay` : chaque rapport de fin de tour réveille le parent.
+- Un seul tech lead par brique. Les sous-agents (outil Agent) restent autorisés ; au seuil, un
+  sous-agent s'arrête et rend à son appelant un rapport de passation (mêmes rubriques).
+- Rapports dans l'issue de suivi (#21) et les PR, pas dans des messages entre sessions.
 - Ne pas réimplémenter la détection du seuil : le hook de #83 est la seule source.
 
 ## 3. Archivage de l'ancienne session
 
-- Par défaut, l'ancienne session est fermée sans être archivée.
-- Archiver seulement après un accord explicite du parent, donné pour cette session.
+- La session sortante s'archive uniquement avec l'accord explicite du parent, donné pour cette
+  session ; sinon elle reste ouverte, sans être archivée.
   Pas d'accord = pas d'archivage ; ne jamais le déduire d'un accord antérieur.
