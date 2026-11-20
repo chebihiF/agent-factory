@@ -34,7 +34,7 @@ mapcheck: ## docs/MAP.md à jour ? (sinon : make map)
 	@python3 infra/scripts/gen_map.py --check
 
 build: ## Image Docker du dashboard
-	docker build -q -f apps/dashboard/Dockerfile -t vva-dashboard:local . >/dev/null
+	docker build -q -f apps/dashboard/Dockerfile -t agent-factory-dashboard:local . >/dev/null
 
 map: ## Régénère docs/MAP.md
 	python3 infra/scripts/gen_map.py

@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/chebihif/vva-dashboard  # GHCR exige des minuscules
+  IMAGE: ghcr.io/chebihif/agent-factory-dashboard  # GHCR exige des minuscules
 
 jobs:
   version:
