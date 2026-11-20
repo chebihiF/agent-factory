@@ -1,4 +1,4 @@
-/* tokens.css — design system du dashboard viral-video-agents (ticket #20).
+/* tokens.css — design system du dashboard viral-video-agents (ticket #20, échelle relevée #179).
    Source de vérité : docs/design/README.md. Les gabarits Jinja n'utilisent QUE ces variables.
    Aucune police distante : piles système uniquement. Contrastes WCAG 2.2 AA vérifiés (voir docs/design/README.md). */
 :root {
@@ -23,12 +23,12 @@
   --color-info-bg: #d9eef9;
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --font-size-title: 24px;
-  --font-size-heading: 18px;
-  --font-size-body: 15px;
-  --font-size-small: 13px;
-  --font-size-label: 12px;
-  --font-size-data: 14px;
+  --font-size-title: 26px;
+  --font-size-heading: 20px;
+  --font-size-body: 16px;
+  --font-size-small: 16px;
+  --font-size-label: 16px;
+  --font-size-data: 16px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -41,6 +41,7 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
   --focus-ring: 2px solid var(--color-focus);
+  --target-min: 44px; /* cible tactile et clavier (#179) */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {

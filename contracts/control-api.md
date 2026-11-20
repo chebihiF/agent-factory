@@ -1,6 +1,7 @@
 # Contrôles : pause des agents et plafond de tokens (#8)
 
-Le parent met les agents en pause (ou fixe un plafond de tokens) depuis le dashboard ; le hook
+Le tech lead met les agents en pause (ou fixe un plafond de tokens) depuis son terminal ; le dashboard
+est en lecture seule (#179) et n'expose aucune page ni POST de contrôle ; le hook
 `PreToolUse` du Mac lit cet état avant chaque outil. Alignement code / contrat vérifié par
 `apps/dashboard/tests/test_controls.py` et `tools/telemetry/tests/test_gate.py`.
 
@@ -16,10 +17,10 @@ Une seule ligne SQLite (table `controls`, voir `db.py`), créée avec le schéma
 | `tokens_24h` | entier | total des tokens des dernières 24 h (même source que `/tokens`, [`token-usage.md`](token-usage.md)) |
 | `updated_at` | texte ISO 8601 UTC | dernier changement d'état |
 
-**Plafond** : évalué à chaque lecture de l'état (page ou API). Si `tokens_24h >= cap_tokens` et
-que les agents tournent, l'état passe à `paused=true`, `reason="plafond"` et la page affiche le
-bandeau « Plafond atteint ». La reprise est **refusée (409)** tant que le plafond est atteint :
-relever le plafond (ou attendre que la fenêtre de 24 h se vide), puis reprendre. Abaisser le plafond
+**Plafond** : évalué à chaque lecture de l'état par l'API (le tableau de bord `/` lit sans écrire). Si `tokens_24h >= cap_tokens` et
+que les agents tournent, l'état passe à `paused=true`, `reason="plafond"`. Reprendre alors que le
+plafond est encore atteint ne sert à rien (la lecture suivante remet en pause) : relever le plafond
+(ou attendre que la fenêtre de 24 h se vide), puis reprendre. Abaisser le plafond
 sous la consommation met en pause. Hors périmètre : plafond par agent, notifications.
 
 ## API pour le hook : `GET /api/v1/control`
@@ -33,22 +34,22 @@ comparaison en temps constant, 503 si non configuré). La session de navigateur 
 | 401 | jeton absent ou faux | `{"detail": "..."}` |
 | 503 | jeton non configuré, ou base illisible | `{"detail": "..."}` |
 
-## Pages (session) : `GET /controls`, `POST /controls/{pause,resume,cap}`
+## Réglage depuis le terminal du tech lead (pages retirées par #179)
 
-| Route | Réponses |
-|---|---|
-| `GET /controls` | 200 page (état, bandeau, formulaires) ; 303 vers `/login` sans session ; 503 si la base est illisible (**fail-closed** : aucune action possible) |
-| `POST /controls/pause` | 303 vers `/controls` ; pause manuelle (idempotente) |
-| `POST /controls/resume` | 303 ; **409** si le plafond est encore atteint |
-| `POST /controls/cap` | 303 ; champ `cap_tokens` entier ASCII entre 1 et 10^12, sinon **422** |
+Plus de `/controls` ni de POST : le tableau de bord `/` ne fait que lire (jauge du plafond). Sur le
+VPS, dans le conteneur du dashboard (même `VVA_DB_PATH`) :
 
-Tous les POST : `application/x-www-form-urlencoded`, 4 Ko maximum (413). Ordre des contrôles :
-session (303 vers `/login`, aucune lecture de la base), taille, **jeton CSRF** (403), base (503).
+```sh
+uv run python -c "from dashboard import db
+with db.connect() as c: db.pause(c, 'manuel')"      # pause manuelle
+uv run python -c "from dashboard import db
+with db.connect() as c: db.set_cap(c, 800000)"     # plafond (entier >= 1)
+uv run python -c "from dashboard import db
+with db.connect() as c: db.resume(c)"              # reprise
+```
 
-**CSRF** : champ caché `csrf` = `base64url(HMAC-SHA256(DASHBOARD_SESSION_KEY, "csrf.v1." + cookie de session))`.
-Lié à la session (un jeton d'une autre session est refusé), comparé en temps constant
-(`hmac.compare_digest`), sans stockage serveur. S'ajoute au cookie `SameSite=Lax`
-([`dashboard-routes.md`](dashboard-routes.md)).
+`db.pause`, `db.resume` et `db.set_cap` sont les seules écritures de la table `controls`, avec la
+pause automatique au plafond ci-dessus.
 
 ## Hook `PreToolUse` : `tools/telemetry/pretool_gate.py`
 

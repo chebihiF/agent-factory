@@ -23,37 +23,39 @@
 - `apps/dashboard/Dockerfile`
 - `apps/dashboard/pyproject.toml`
 - `apps/dashboard/src/dashboard/__init__.py` — Agents Dashboard.
-- `apps/dashboard/src/dashboard/activity.py` — GET /activity : 100 derniers événements d'agents (contrat : contracts/dashboard-routes.md)
+- `apps/dashboard/src/dashboard/activity.py` — Lecture des événements d'agents, partagée par `/`, `/interactions` et `/stream`.
 - `apps/dashboard/src/dashboard/auth.py` — Connexion au dashboard (contrat : contracts/dashboard-routes.md).
+- `apps/dashboard/src/dashboard/board.py` — GET / : tableau de bord unique, en lecture seule (#179, spec docs/design/dashboard-refonte
 - `apps/dashboard/src/dashboard/controls.py` — Pause des agents et plafond de tokens (contrat : contracts/control-api.md).
 - `apps/dashboard/src/dashboard/db.py` — Persistance SQLite des événements d'agents et des tokens (stdlib `sqlite3`).
+- `apps/dashboard/src/dashboard/github.py` — Lecture des tickets GitHub pour le tableau de bord `/` (#26, recentré par #179).
 - `apps/dashboard/src/dashboard/ingest.py` — POST /api/v1/events : ingestion authentifiée (contrat : contracts/ingest-api.md).
 - `apps/dashboard/src/dashboard/interactions.py` — GET /interactions : sessions, sous-agents et durée (contrat : contracts/dashboard-routes.m
 - `apps/dashboard/src/dashboard/main.py` — Point d'entrée FastAPI du dashboard (routes : contracts/dashboard-routes.md).
 - `apps/dashboard/src/dashboard/otlp.py` — POST /v1/metrics : tokens Claude Code en OTLP/HTTP JSON (contrat : contracts/token-usage.m
-- `apps/dashboard/src/dashboard/progress.py` — GET /progress et GET /api/v1/progress : avancement du projet et travail des agents (#26).
+- `apps/dashboard/src/dashboard/static/board.css`
+- `apps/dashboard/src/dashboard/static/board.js` — Tableau de bord (#179) : lecture seule. Recharge #contenu par GET toutes les 5 s (sans
 - `apps/dashboard/src/dashboard/static/live.js` — Temps réel : flux SSE /stream (EventSource, reprise automatique par Last-Event-ID).
 - `apps/dashboard/src/dashboard/static/nav.css`
-- `apps/dashboard/src/dashboard/static/progress.js` — Actualisation de /progress toutes les 60 s (sans dépendance : ni CDN, ni bibliothèque).
 - `apps/dashboard/src/dashboard/static/tokens.css`
 - `apps/dashboard/src/dashboard/stream.py` — GET /stream : flux SSE des événements d'agents (contrat : contracts/dashboard-routes.md).
 - `apps/dashboard/src/dashboard/templates/_nav.html`
-- `apps/dashboard/src/dashboard/templates/activity.html`
-- `apps/dashboard/src/dashboard/templates/controls.html`
+- `apps/dashboard/src/dashboard/templates/board.html`
 - `apps/dashboard/src/dashboard/templates/interactions.html`
 - `apps/dashboard/src/dashboard/templates/login.html`
-- `apps/dashboard/src/dashboard/templates/progress.html`
 - `apps/dashboard/src/dashboard/templates/tokens.html`
 - `apps/dashboard/src/dashboard/tokens.py` — Totaux de tokens par agent et par modèle, sur 24 h et 7 jours glissants.
-- `apps/dashboard/tests/test_activity.py` — Liste d'activité des agents (#5) : 100 derniers événements, vues tableau + flux.
+- `apps/dashboard/tests/test_activity.py` — Lecture des événements d'agents (#5, #68, #181), partagée par `/`, `/interactions`, `/stre
 - `apps/dashboard/tests/test_auth.py` — Connexion au dashboard (#5) : mot de passe, cookie de session signé, limitation.
-- `apps/dashboard/tests/test_controls.py` — Contrôles pause et plafond de tokens (#8) : /controls, POST protégés (CSRF), /api/v1/contr
+- `apps/dashboard/tests/test_board.py` — Tableau de bord unique en lecture seule (#179) : GET /, spec docs/design/dashboard-refonte
+- `apps/dashboard/tests/test_board_qa.py` — QA #179 : cas limites du tableau de bord (360 px, unicode/darija, lecture seule).
+- `apps/dashboard/tests/test_controls.py` — Pause et plafond de tokens (#8) : API GET /api/v1/control seule (pages retirées par #179).
 - `apps/dashboard/tests/test_ensure_token.py` — Le script de déploiement crée le jeton d'ingestion une seule fois, en 600.
+- `apps/dashboard/tests/test_github.py` — Lecture GitHub du tableau de bord (#26, recentrée par #179) : client, cache, analyse.
 - `apps/dashboard/tests/test_ingest.py` — Ingestion authentifiée des événements d'agents (#3).
 - `apps/dashboard/tests/test_interactions.py` — Interactions entre agents (#6) : sessions, sous-agents (SubagentStart/Stop) et durée.
-- `apps/dashboard/tests/test_main.py` — Accueil, redirections et navigation commune (#58).
+- `apps/dashboard/tests/test_main.py` — Accueil (tableau de bord, #179), redirections et navigation commune (#58).
 - `apps/dashboard/tests/test_otlp.py` — Réception OTLP/HTTP JSON des métriques de tokens (#7).
-- `apps/dashboard/tests/test_progress.py` — Suivi visuel du projet (#26) : /progress et /api/v1/progress. GitHub est toujours mocké.
 - `apps/dashboard/tests/test_stream.py` — Flux SSE /stream (#6) : session exigée, id croissant, reprise par Last-Event-ID.
 - `apps/dashboard/tests/test_tokens.py` — Page /tokens : totaux par agent et par modèle sur 24 h et 7 jours (#7).
 - `contracts/README.md` — contracts
@@ -63,7 +65,6 @@
 - `contracts/control-api.md` — Contrôles : pause des agents et plafond de tokens (#8)
 - `contracts/dashboard-routes.md` — Routes du dashboard
 - `contracts/ingest-api.md` — API d'ingestion des événements d'agents
-- `contracts/progress.schema.json` — données JSON
 - `contracts/token-usage.md` — Métriques de tokens (OTLP/HTTP JSON)
 - `docs/SCRUM.md` — Scrum — fonctionnement de l'équipe (humain + agents)
 - `docs/adr/ADR-002-stack-dashboard.md` — ADR-002 — Stack du dashboard (et des services Python)
@@ -73,6 +74,7 @@
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
 - `docs/design/activity.md` — Écran « Activité des agents »
+- `docs/design/dashboard-refonte.md` — Refonte du dashboard des agents (ticket #179)
 - `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
 - `docs/telemetry-cablage.md` — Câblage de l'ingestion des événements d'agents (#180)

@@ -165,7 +165,7 @@ async def login(request: Request) -> Response:
 
 
 def _open_session(key: str) -> RedirectResponse:
-    response = RedirectResponse("/activity", status_code=303)
+    response = RedirectResponse("/", status_code=303)
     token = sign_session(key, expires_at=int(time.time()) + SESSION_TTL_S)
     response.set_cookie(
         COOKIE_NAME,

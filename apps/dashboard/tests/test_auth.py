@@ -35,11 +35,11 @@ def login(client: TestClient, password: str = PASSWORD) -> int:
 
 
 # Scénario : accès protégé
-def test_activity_redirects_to_login_when_anonymous(client: TestClient) -> None:
-    resp = client.get("/activity")
+def test_board_redirects_to_login_when_anonymous(client: TestClient) -> None:
+    resp = client.get("/")
     assert resp.status_code == 303
     assert resp.headers["location"] == "/login"
-    assert "<table" not in resp.text
+    assert "<section" not in resp.text
 
 
 @pytest.mark.parametrize(
@@ -55,7 +55,7 @@ def test_activity_redirects_to_login_when_anonymous(client: TestClient) -> None:
 )
 def test_forged_or_expired_cookie_redirects(client: TestClient, cookie: str) -> None:
     client.cookies.set(auth.COOKIE_NAME, cookie)
-    assert client.get("/activity").status_code == 303
+    assert client.get("/").status_code == 303
 
 
 def test_expired_signed_cookie_is_rejected() -> None:
@@ -79,14 +79,14 @@ def test_login_page_is_public(client: TestClient) -> None:
 def test_good_password_sets_signed_cookie_and_shows_activity(client: TestClient) -> None:
     resp = client.post("/login", data={"password": PASSWORD})
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/activity"
+    assert resp.headers["location"] == "/"
     cookie = resp.headers["set-cookie"]
     assert cookie.startswith(f"{auth.COOKIE_NAME}=")
     for attr in ("HttpOnly", "Secure", "SameSite=lax", "Path=/"):
         assert attr.lower() in cookie.lower(), attr
     value = cookie.split(";")[0].split("=", 1)[1]
     assert auth.verify_session(SESSION_KEY, value)
-    assert client.get("/activity").status_code == 200
+    assert client.get("/").status_code == 200
 
 
 # Scénario : mauvais mot de passe
@@ -172,7 +172,7 @@ def test_contract_documents_routes_env_and_cookie() -> None:
         assert f"`{name}`" in text, name
     documented = set(re.findall(r"`(?:GET|POST) (/[a-z/]*)`", text))
     served = set(app.openapi()["paths"])
-    assert {"/login", "/activity", "/healthz"} <= documented <= served
+    assert {"/login", "/", "/healthz"} <= documented <= served
 
 
 def test_non_ascii_or_huge_expiry_is_rejected_without_error() -> None:

@@ -1,9 +1,11 @@
-"""Liste d'activité des agents (#5) : 100 derniers événements, vues tableau + flux."""
+"""Lecture des événements d'agents (#5, #68, #181), partagée par `/`, `/interactions`, `/stream`.
+
+La page `/activity` a été retirée par #179 (tableau de bord unique).
+"""
 
 from __future__ import annotations
 
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -54,102 +56,21 @@ def seed(n: int, **extra: Any) -> None:
         db.insert_events(conn, rows)
 
 
-def feed_ids(html: str) -> list[str]:
-    return re.findall(r'data-event-id="([^"]+)"', html)
+def test_activity_page_is_gone(client: TestClient) -> None:
+    assert client.get("/activity").status_code == 404
 
 
-# Scénario : liste
-def test_shows_100_latest_events_newest_first(client: TestClient) -> None:
-    seed(150)
-    resp = client.get("/activity")
-    assert resp.status_code == 200
-    ids = feed_ids(resp.text)
-    assert ids == [f"evt-{i:03d}" for i in range(149, 49, -1)]
-
-
-def test_each_event_shows_time_agent_type_id_event_and_tool(client: TestClient) -> None:
-    seed(1, agent_type="qa", agent_id="agent-42", tool_name="Read")
-    html = client.get("/activity").text
-    assert '<time datetime="2026-11-18T10:00:00+00:00">' in html
-    for value in ("qa", "agent-42", "PreToolUse", "Read"):
-        assert value in html, value
-
-
-def test_latest_events_query_is_bounded() -> None:
+def test_latest_events_are_bounded_and_newest_first(db_file: Path) -> None:
     assert activity.MAX_EVENTS == 100
-
-
-def test_agents_table_lists_each_agent_once(client: TestClient) -> None:
-    seed(10)
-    html = client.get("/activity").text
-    table = html.split("<table", 1)[1].split("</table>", 1)[0]
-    assert 'scope="col"' in table
-    for agent in ("agent-0", "agent-1", "agent-2"):
-        assert table.count(f">{agent}<") == 1, agent
-
-
-def test_values_are_html_escaped(client: TestClient) -> None:
-    seed(1, tool_name="<script>alert(1)</script>")
-    html = client.get("/activity").text
-    assert "<script>alert(1)" not in html
-    assert "&lt;script&gt;" in html
-
-
-def test_missing_optional_fields_show_dash(client: TestClient) -> None:
-    seed(1, agent_type=None, agent_id=None, tool_name=None)
-    resp = client.get("/activity")
-    assert resp.status_code == 200
-    assert "—" in resp.text
-
-
-# Structure sémantique (docs/design/activity.md)
-def test_semantic_structure(client: TestClient) -> None:
-    seed(3)
-    html = client.get("/activity").text
-    assert "<main" in html and "<h1>Activité des agents</h1>" in html
-    assert re.search(r'<section[^>]* aria-labelledby="[^"]+"', html)
-    assert re.search(r'<aside[^>]* aria-labelledby="[^"]+"', html)
-    assert '<ol aria-live="polite"' in html
-    assert "<caption" in html
-
-
-def test_page_not_cached(client: TestClient) -> None:
-    assert "no-store" in client.get("/activity").headers["cache-control"]
-
-
-# États
-def test_empty_state(client: TestClient) -> None:
-    html = client.get("/activity").text
-    assert "Aucun agent n'a encore travaillé" in html
-    assert feed_ids(html) == []
-
-
-def test_error_state_when_database_unreadable(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def broken(conn: sqlite3.Connection, limit: int = 100) -> list[activity.Event]:
-        raise sqlite3.OperationalError("disk I/O error")
-
-    monkeypatch.setattr(activity, "latest_events", broken)
-    resp = client.get("/activity")
-    assert resp.status_code == 503
-    assert 'role="alert"' in resp.text
-    assert "Réessayer" in resp.text
-    assert "disk I/O" not in resp.text
-
-
-def test_anonymous_request_never_reads_events(
-    db_file: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[int] = []
-    monkeypatch.setattr(activity, "latest_events", lambda *a, **k: calls.append(1) or [])
-    anon = TestClient(app, base_url="https://testserver", follow_redirects=False)
-    assert anon.get("/activity").status_code == 303
-    assert calls == []
+    seed(130)
+    with db.connect() as conn:
+        events = activity.latest_events(conn)
+    assert len(events) == 100
+    assert events[0].event_id == "evt-129"
 
 
 # Gabarits : tokens.css uniquement, aucune ressource distante
-@pytest.mark.parametrize("name", ["login.html", "activity.html"])
+@pytest.mark.parametrize("name", ["login.html", "interactions.html"])
 def test_templates_use_only_design_tokens(name: str) -> None:
     text = (TEMPLATES / name).read_text(encoding="utf-8")
     assert '<link rel="stylesheet" href="/static/tokens.css">' in text
@@ -173,7 +94,6 @@ def test_latest_events_carry_project(db_file: Path) -> None:
     assert event.project == "agent-factory"
 
 
-# #68 : filtre par projet (docs/design/filtre-projet.md, variante A)
 def seed_projects(**counts: int) -> None:
     """`viral_video_agents=2` : 2 événements (agents distincts) pour ce projet."""
     rows = [
@@ -196,143 +116,29 @@ def seed_projects(**counts: int) -> None:
         db.insert_events(conn, rows)
 
 
-def table_of(html: str) -> str:
-    return html.split("<table", 1)[1].split("</table>", 1)[0]
-
-
-# Scénario : nouvel événement filtrable
-def test_filtered_view_shows_only_project_events(client: TestClient) -> None:
-    seed_projects(viral_video_agents=2, agent_factory=1)
-    html = client.get("/activity?projet=agent-factory").text
-    assert feed_ids(html) == ["agent_factory-0"]
-    assert "agent_factory-agent-0" in table_of(html)
-    assert "viral_video_agents-agent" not in html
-    assert "Agents · agent-factory" in html
-    assert '<th scope="col">Projet</th>' not in html
-
-
-def test_all_projects_view_has_project_column(client: TestClient) -> None:
-    seed_projects(viral_video_agents=1, agent_factory=1)
-    html = client.get("/activity").text
-    table = table_of(html)
-    assert '<th scope="col">Projet</th>' in table
-    assert "badge-info" in table and "badge-warn" in table
-    assert len(feed_ids(html)) == 2
-
-
-def test_filter_is_a_native_radio_group_reflecting_the_url(client: TestClient) -> None:
-    seed_projects(viral_video_agents=2, agent_factory=1)
-    html = client.get("/activity?projet=viral-video-agents").text
-    form = html.split('<form aria-label="Filtre par projet"', 1)[1].split("</form>", 1)[0]
-    assert 'method="get" action="/activity"' in form
-    assert "<legend>Projet</legend>" in form
-    radios = re.findall(r'<input type="radio" name="projet" value="([^"]*)"( checked)?', form)
-    assert radios == [("", ""), ("viral-video-agents", " checked"), ("agent-factory", "")]
-    assert re.findall(r'<span class="count" data-count="([^"]*)">(\d+)</span>', form) == [
-        ("", "3"),
-        ("viral-video-agents", "2"),
-        ("agent-factory", "1"),
-    ]
-    assert "<noscript>" in form  # sans JS : bouton d'envoi
-
-
-def test_filter_status_phrase(client: TestClient) -> None:
-    seed_projects(viral_video_agents=2, agent_factory=1)
-    filtered = client.get("/activity?projet=agent-factory").text
-    assert "Affichage : agent-factory · 1 agent<" in filtered
-    assert "Affichage : tous les projets · 3 agents<" in client.get("/activity").text
-
-
-def test_unknown_project_falls_back_to_all(client: TestClient) -> None:
-    seed_projects(viral_video_agents=1, agent_factory=1)
-    html = client.get("/activity?projet=inconnu").text
-    assert len(feed_ids(html)) == 2
-    assert "Projet inconnu : affichage de tous les projets" in html
-    assert "inconnu<" not in html.replace("Projet inconnu", "")
-    assert '<input type="radio" name="projet" value="" checked' in html
-
-
-def test_filtered_empty_state_links_to_all(client: TestClient) -> None:
-    seed_projects(viral_video_agents=1)
-    html = client.get("/activity?projet=agent-factory").text
-    assert "Aucun agent pour agent-factory pour l'instant" in html
-    assert '<a href="/activity">Voir tous les projets</a>' in html
-    assert feed_ids(html) == []
-
-
-def test_error_retry_keeps_project(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    def broken(*a: object, **k: object) -> list[activity.Event]:
-        raise sqlite3.OperationalError("x")
-
-    monkeypatch.setattr(activity, "latest_events", broken)
-    html = client.get("/activity?projet=agent-factory").text
-    assert '<a href="/activity?projet=agent-factory">Réessayer</a>' in html
-
-
-def test_live_script_submits_filter_and_keeps_it_on_stream() -> None:
-    script = (TEMPLATES.parent / "static" / "live.js").read_text(encoding="utf-8")
-    assert "form[data-autosubmit]" in script and "requestSubmit" in script
-    assert "ev.project === project" in script  # le flux SSE respecte le filtre
-    assert "innerHTML" not in script
-
-
-# #68 revue : un seul GROUP BY, « Tous » sur la fenêtre affichée, plus de couleurs de pastilles
 def test_counts_use_one_grouped_query(db_file: Path) -> None:
     seed_projects(viral_video_agents=2, agent_factory=1, autre=1)
     statements: list[str] = []
     with db.connect() as conn:
         conn.set_trace_callback(statements.append)
-        view = activity.load_view_from(conn, "")
-    selects = [s for s in statements if s.lstrip().upper().startswith(("SELECT", "WITH"))]
-    assert len(selects) == 2  # compteurs (un GROUP BY) + événements ; plus de DISTINCT par projet
-    assert sum("GROUP BY" in s for s in selects) == 1
-    assert view.counts == {"": 4, "viral-video-agents": 2, "agent-factory": 1, "autre": 1}
+        counts = activity.agent_counts(conn)
+    assert sum("GROUP BY" in s for s in statements) == 1
+    assert counts == {"": 4, "viral-video-agents": 2, "agent-factory": 1, "autre": 1}
 
 
-def test_counts_match_the_windows_shown(db_file: Path) -> None:
+def test_counts_match_the_event_windows(db_file: Path) -> None:
     rows = [
-        (
-            f"x-{i}",
-            f"2026-11-19T10:{i // 60:02d}:{i % 60:02d}+00:00",
-            "Stop",
-            "s",
-            "qa",
-            f"a-{i}",
-            None,
-            "autre",
-            None,
-            None,
-        )  # noqa: E501
+        (f"x-{i}", f"2026-11-19T10:{i // 60:02d}:{i % 60:02d}+00:00", "Stop", "s", "qa", f"a-{i}")
+        + (None, "autre", None, None)
         for i in range(120)
     ]
     with db.connect() as conn:
         db.insert_events(conn, rows)
-        view = activity.load_view_from(conn, "")
+        counts = activity.agent_counts(conn)
+        everyone = activity.agents(activity.latest_events(conn))
         in_project = activity.agents(activity.latest_events(conn, project="autre"))
-    assert view.counts[""] == len(activity.agents(view.events)) == 100  # fenêtre de la vue « Tous »
-    assert view.counts["autre"] == len(in_project) == 100  # fenêtre de la vue filtrée
-
-
-def test_badges_use_four_distinct_colours(client: TestClient) -> None:
-    seed_projects(viral_video_agents=1, agent_factory=1, autre=1, encore=1)
-    html = client.get("/activity").text
-    used = set(re.findall(r'class="badge (badge-[a-z0-9-]+)"', table_of(html)))
-    assert len(used) == 4
-    css = (TEMPLATES / "activity.html").read_text(encoding="utf-8")
-    assert all(f".{name} {{" in css for name in used)
-
-
-def test_live_script_does_not_submit_on_arrow_keys() -> None:
-    script = (TEMPLATES.parent / "static" / "live.js").read_text(encoding="utf-8")
-    assert "ArrowDown" in script and "Enter" in script  # WCAG 3.2.2 : flèches sans rechargement
-
-
-# #181 : modèle porté par les événements
-def test_agents_table_shows_model(client: TestClient) -> None:
-    seed(1, agent_id="agent-42", model="claude-opus-5-5")
-    html = client.get("/activity").text
-    assert '<th scope="col">Modèle</th>' in table_of(html)
-    assert "<code>claude-opus-5-5</code>" in table_of(html)
+    assert counts[""] == len(everyone) == 100
+    assert counts["autre"] == len(in_project) == 100
 
 
 def test_agent_model_is_latest_known(db_file: Path) -> None:
@@ -345,9 +151,3 @@ def test_agent_model_is_latest_known(db_file: Path) -> None:
         db.insert_events(conn, rows)
         (agent,) = activity.agents(activity.latest_events(conn))
     assert (agent.event_id, agent.model, agent.issue) == ("m3", "m-new", 3)
-
-
-def test_agent_without_model_shows_dash(client: TestClient) -> None:
-    seed(1, agent_id="agent-42")
-    row = table_of(client.get("/activity").text).split("agent-42", 1)[1].split("</tr>", 1)[0]
-    assert "<td>—</td>" in row
