@@ -342,6 +342,12 @@ def config_from_env(background: bool = False) -> Config | None:
     return Config(events_file=target_file(), url=url, token=token, timeout=timeout)
 
 
+def missing_settings() -> str:
+    """Noms (jamais les valeurs) des variables d'envoi absentes ou vides."""
+    names = ("VVA_INGEST_URL", "VVA_INGEST_TOKEN")
+    return ", ".join(name for name in names if not os.environ.get(name))
+
+
 def spawn_detached() -> int:
     """Hook Stop : lance l'expédition dans un processus détaché et rend la main."""
     if config_from_env(background=True) is None:
@@ -365,7 +371,7 @@ def main(argv: list[str] | None = None) -> int:
     if cfg is None:
         if "--detached" in args:
             return EXIT_OK
-        print("ship: VVA_INGEST_URL et VVA_INGEST_TOKEN sont requis", file=sys.stderr)
+        print(f"ship: rien envoyé, variable absente : {missing_settings()}", file=sys.stderr)
         return EXIT_CONFIG
     return run(cfg)
 

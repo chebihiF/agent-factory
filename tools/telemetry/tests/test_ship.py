@@ -254,6 +254,37 @@ def test_main_requires_env(
     assert ship.main() == ship.EXIT_CONFIG
 
 
+def test_main_without_url_says_so_and_sends_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+    server: FakeIngest,
+    events_file: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_events(events_file, 0, 2)
+    monkeypatch.setenv("VVA_TELEMETRY_FILE", str(events_file))
+    monkeypatch.delenv("VVA_INGEST_URL", raising=False)
+    monkeypatch.setenv("VVA_INGEST_TOKEN", TOKEN)
+    assert ship.main() == ship.EXIT_CONFIG
+    err = capsys.readouterr().err
+    assert "VVA_INGEST_URL" in err
+    assert "VVA_INGEST_TOKEN" not in err
+    assert TOKEN not in err
+    assert server.hits == 0
+    assert not ship.cursor_path(events_file).exists()
+
+
+def test_main_without_token_names_only_the_token(
+    monkeypatch: pytest.MonkeyPatch, events_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("VVA_TELEMETRY_FILE", str(events_file))
+    monkeypatch.setenv("VVA_INGEST_URL", "https://dashboard.invalid/api/v1/events")
+    monkeypatch.delenv("VVA_INGEST_TOKEN", raising=False)
+    assert ship.main() == ship.EXIT_CONFIG
+    err = capsys.readouterr().err
+    assert "VVA_INGEST_TOKEN" in err
+    assert "VVA_INGEST_URL" not in err
+
+
 def test_main_reads_env(
     monkeypatch: pytest.MonkeyPatch, server: FakeIngest, events_file: Path
 ) -> None:
@@ -527,3 +558,55 @@ def test_background_uses_a_short_timeout(
     regular = ship.config_from_env(background=False)
     assert regular is not None
     assert regular.timeout > ship.BACKGROUND_TIMEOUT_S
+
+
+# #180 : forme réelle de l'ancien journal (log_event.sh : ts epoch, sans event_id ni project)
+OLD_JOURNAL_LINE = {
+    "hook_event_name": "PostToolUse",
+    "session_id": "s-1",
+    "agent_type": "dev-backend",
+    "tool_name": "Bash",
+    "ts": 1763630000.123,
+}
+
+
+def test_old_journal_shape_is_archived_not_rejected_in_a_loop(
+    server: FakeIngest, events_file: Path
+) -> None:
+    write_raw(events_file, *(json.dumps(OLD_JOURNAL_LINE) for _ in range(50)))
+    for _ in range(3):
+        assert ship.run(config(events_file, server.url)) == ship.EXIT_OK
+    assert server.hits == 0
+    assert not ship.rejected_path(events_file).exists()
+    (archive,) = archives(events_file)
+    assert len(archive.read_text(encoding="utf-8").splitlines()) == 50
+
+
+def test_hook_to_ship_end_to_end(
+    monkeypatch: pytest.MonkeyPatch, server: FakeIngest, events_file: Path
+) -> None:
+    hook = Path(ship.__file__).with_name("hook_emit.py")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("VVA_")}
+    env |= {"VVA_TELEMETRY_FILE": str(events_file), "VVA_PROJECT": "agent-factory"}
+    payload = {"hook_event_name": "SubagentStart", "session_id": "s-1", "agent_type": "qa"}
+    subprocess.run(  # noqa: S603 - interpréteur courant, script du dépôt
+        [sys.executable, str(hook)],
+        input=json.dumps(payload),
+        text=True,
+        env=env,
+        timeout=10,
+        check=True,
+    )
+    monkeypatch.setenv("VVA_TELEMETRY_FILE", str(events_file))
+    monkeypatch.setenv("VVA_INGEST_URL", server.url)
+    monkeypatch.setenv("VVA_INGEST_TOKEN", TOKEN)
+    assert ship.main() == ship.EXIT_OK
+    ((sent,),) = server.batches
+    assert sent["project"] == "agent-factory"
+    assert sent["hook_event_name"] == "SubagentStart"
+    assert datetime.fromisoformat(sent["ts"]).tzinfo is not None
+    assert sent["event_id"]
+    assert server.auth == [f"Bearer {TOKEN}"]
+    assert (
+        ship.stored_offset(events_file, events_file.stat().st_ino, events_file.stat().st_size) > 0
+    )
