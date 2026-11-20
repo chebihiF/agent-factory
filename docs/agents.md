@@ -156,6 +156,30 @@ Câblage à faire par le parent (`.claude/settings.json`, local, jamais commité
   "command": "\"$CLAUDE_PROJECT_DIR/tools/agents/bin/handoff.sh\" check" }] }]
 ```
 
+## Skills /ticket, /sprint, /deploy-check (#15, #16)
+
+Versions génériques, versionnées hors `.claude/` ; chaque projet les copie dans son
+`.claude/skills/` local (jamais commité) :
+
+| Skill | Fichier | Contrat |
+|-------|---------|---------|
+| `/ticket <n>` | [`skills/ticket/SKILL.md`](../skills/ticket/SKILL.md), DoD [`skills/ticket/checklist.md`](../skills/ticket/checklist.md) | 8 étapes ; `stop-agents` → rien n'est modifié ; 2 échecs de `make check` → carte « En cours », aucun merge ; PR `Closes #<n>` par le bot, merge squash, cartes En cours → Revue → Livré |
+| `/sprint` | [`skills/sprint/SKILL.md`](../skills/sprint/SKILL.md) | `status` ≤ 15 lignes par colonne ; `move <n> <colonne>` ; `run` ; `next` (alias `close`) : itération suivante de 7 jours, cartes non livrées reportées |
+| `/deploy-check` | [`skills/deploy-check/SKILL.md`](../skills/deploy-check/SKILL.md) | version servie vs dernier merge, smoke test en lecture seule ; KO → bug `type:bug` P0 automatique, rollback par le pipeline proposé puis lancé après confirmation explicite du propriétaire |
+
+`checklist.md` est une copie de la DoD de [`SCRUM.md`](SCRUM.md), qui reste la source de vérité.
+
+**Surcouche du projet** (locale, jamais commitée, ni ici ni chez le projet) : dépôt, propriétaire
+et numéro du Project, compte bot `<bot>`, issue journal, postes du pool, agents propres au
+projet (délégation de l'étape 3 de `/ticket`), URL de prod et services voisins de
+`/deploy-check`. Elle se réapplique dans le `.claude/` local après copie des skills.
+
+`tools/agents/tests/test_skills.py` vérifie le front-matter (`name` = dossier, `description`
+avec `Usage /<name>`), le contrat et les scénarios Gherkin de chaque skill, l'égalité
+checklist = DoD, et qu'aucun fichier générique (`skills/`, `agents/`, `rules/`, `hooks/`, cette
+page) ne contient de valeur propre à un projet (`git grep` : adresse IP, chemin machine, nom
+d'hôte du serveur, machine GPU, poste nommé, dépôt du produit) ni de secret.
+
 ## Limites
 
 - Échec d'une tâche : noté à la main (`fail`) par le tech lead ; la télémétrie ne le détecte
