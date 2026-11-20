@@ -57,6 +57,7 @@
 - `apps/dashboard/tests/test_main.py` — Accueil (tableau de bord, #179), redirections et navigation commune (#58).
 - `apps/dashboard/tests/test_otlp.py` — Réception OTLP/HTTP JSON des métriques de tokens (#7).
 - `apps/dashboard/tests/test_stream.py` — Flux SSE /stream (#6) : session exigée, id croissant, reprise par Last-Event-ID.
+- `apps/dashboard/tests/test_tickets_qa.py` — QA #182 : cas limites de la liste des tickets (lecture seule, unicode, sans jeton, statut)
 - `apps/dashboard/tests/test_tokens.py` — Page /tokens : totaux par agent et par modèle sur 24 h et 7 jours (#7).
 - `contracts/README.md` — contracts
 - `contracts/agent-event.schema.json` — données JSON
