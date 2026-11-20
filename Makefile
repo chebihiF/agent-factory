@@ -1,6 +1,6 @@
 # Cibles silencieuses : n'affichent que les échecs (économie de tokens).
 .SILENT:
-.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket install-agents
+.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall install-agents
 
 UV := uv run -q
 SH := infra/scripts/quiet.sh
@@ -48,6 +48,13 @@ bootstrap: ## Copie .claude/ et CLAUDE.md du checkout principal (VVA_MAIN=chemin
 ticket: ## Ticket N sur un poste libre du pool (N=<n>, DRY=1 pour simuler)
 	case '$(N)' in ''|*[!0-9]*) echo "usage : make ticket N=<n> (numérique)" >&2; exit 2;; esac
 	infra/scripts/pool.sh $(if $(DRY),--dry-run) '$(N)'
+
+loop-install: ## Planifie la boucle autonome (launchd ; CONFIG=~/.vva/loop.yml par défaut)
+	$(if $(findstring ',$(CONFIG)),$(error CONFIG : apostrophe interdite))
+	tools/agents/bin/agent-loop.sh install $(if $(CONFIG),--config '$(CONFIG)')
+
+loop-uninstall: ## Retire la planification de la boucle autonome
+	tools/agents/bin/agent-loop.sh uninstall
 
 install-agents: ## Installe agents/skills/hooks dans un projet (PROJECT=<chemin> [OVERLAY=<fichier>])
 	test -n "$$PROJECT" || { echo "usage : make install-agents PROJECT=<chemin> [OVERLAY=<fichier>]" >&2; exit 2; }

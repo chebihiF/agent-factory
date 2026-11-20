@@ -58,6 +58,7 @@
 - `apps/dashboard/tests/test_tokens.py` — Page /tokens : totaux par agent et par modèle sur 24 h et 7 jours (#7).
 - `contracts/README.md` — contracts
 - `contracts/agent-event.schema.json` — données JSON
+- `contracts/agent-loop-state.schema.json` — données JSON
 - `contracts/agents-journal.schema.json` — données JSON
 - `contracts/control-api.md` — Contrôles : pause des agents et plafond de tokens (#8)
 - `contracts/dashboard-routes.md` — Routes du dashboard
@@ -104,10 +105,15 @@
 - `skills/sprint/SKILL.md` — sprint
 - `skills/ticket/SKILL.md` — ticket
 - `skills/ticket/checklist.md` — Checklist /ticket — Definition of Done
+- `tools/agents/agent_loop.py` — Boucle autonome planifiée (#18) : un ticket « Prêt » par tick, sous budget de tokens.
+- `tools/agents/bin/agent-loop.sh` — Boucle autonome planifiée (#18). Voir docs/agents.md.
 - `tools/agents/bin/handoff.sh` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/bin/token-report.sh` — Tokens par ticket, agent et modèle, ≤ 15 lignes, compteurs seuls (#19). Voir docs/agents.m
+- `tools/agents/config/loop.example.yml` — Boucle autonome planifiée (#18) : copier en ~/.vva/loop.yml (local, jamais commité), puis
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
+- `tools/agents/launchd/agents-loop.plist.template` — Boucle autonome planifiée (#18) : rendu par `make loop-install` (agent_loop.py install).
+- `tools/agents/tests/test_agent_loop.py` — Boucle autonome planifiée (#18) : gh, contrôles, pool, session et launchctl sont injectés.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
 - `tools/agents/tests/test_skills.py` — Skills versionnés /ticket, /sprint, /deploy-check (#15, #16) : lecture des fichiers seulem
 - `tools/agents/tests/test_token_report.py` — Mesure des tokens par ticket et routage des modèles (#19).

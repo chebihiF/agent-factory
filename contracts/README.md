@@ -11,3 +11,4 @@ Contrats versionnés entre les agents (hooks, télémétrie) et le dashboard.
 | [`dashboard-routes.md`](dashboard-routes.md) | Pages et configuration du dashboard |
 | [`progress.schema.json`](progress.schema.json) | Réponse de `GET /api/v1/progress` : avancement du projet et des agents |
 | [`agents-journal.schema.json`](agents-journal.schema.json) | Ligne du journal local des agents (session vers ticket) |
+| [`agent-loop-state.schema.json`](agent-loop-state.schema.json) | Compteurs du jour de la boucle autonome (budget de tokens, tickets) |

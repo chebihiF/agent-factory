@@ -1,0 +1,7 @@
+# Boucle autonome planifiée (#18) : copier en ~/.vva/loop.yml (local, jamais commité), puis
+# `make loop-install`. Sous-ensemble YAML lu sans dépendance : « clé: valeur » à plat.
+# Contrat : docs/agents.md (boucle autonome). Changer `hours` impose de relancer `make loop-install`.
+hours: [09:00, 14:00] # heures locales HH:MM : un tick (au plus un ticket) à chacune
+daily_token_budget: 2000000 # tokens/jour cumulés localement ; atteint = arrêt jusqu'au lendemain
+max_tickets_per_day: 2
+control_url: https://dashboard.example.org/api/v1/control # GET /api/v1/control du dashboard (#8)

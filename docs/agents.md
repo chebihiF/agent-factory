@@ -218,3 +218,75 @@ d'hôte du serveur, machine GPU, poste nommé, dépôt du produit) ni de secret.
 - Tokens antérieurs au hook `link` : « sans ticket ». Une session sur `main` aussi.
 - Le label `complex` n'est pas lu sur GitHub : le passer à `route --label`.
 - Coûts en euros : hors périmètre.
+
+## Boucle autonome planifiée (#18)
+
+Aux heures configurées, la boucle prend le ticket « Prêt » le plus prioritaire et le traite par
+une session neuve `/ticket <n>`, dans un budget de tokens quotidien. Outil :
+`tools/agents/bin/agent-loop.sh` (`tools/agents/agent_loop.py`, stdlib, Python 3.9).
+Planification : launchd du Mac (0 €), un seul ticket à la fois (hors périmètre : parallélisme,
+serveur distant).
+
+```sh
+cp tools/agents/config/loop.example.yml ~/.vva/loop.yml   # local, jamais commité ; à adapter
+make loop-install            # CONFIG=<fichier> (sans apostrophe) pour un autre chemin ; à relancer si hours change
+make loop-uninstall
+tools/agents/bin/agent-loop.sh tick --config ~/.vva/loop.yml   # un tick à la main
+```
+
+**Config** (contrat ; clé inconnue, manquante ou invalide = `config-invalid`, aucune session) :
+
+| Clé | Valeur |
+|---|---|
+| `hours` | liste `[HH:MM, …]`, heures locales distinctes ; une entrée `StartCalendarInterval` chacune |
+| `daily_token_budget` | entier ≥ 1, tokens par jour cumulés localement |
+| `max_tickets_per_day` | entier ≥ 1 |
+| `control_url` | `GET /api/v1/control` du dashboard ([contrat](../contracts/control-api.md)) : `https`, ou `http` sur localhost |
+
+**Un tick**, dans l'ordre ; le premier arrêt l'emporte et s'écrit en une ligne
+`<date> <code>` dans `~/.vva/loop/loop.log` (jamais titre, prompt, jeton ni contenu) :
+
+1. Verrou `~/.vva/loop/lock` : un tick ou une session encore en cours → `busy`.
+2. Compteurs du jour `~/.vva/loop/state.json` (600, [schéma](../contracts/agent-loop-state.schema.json),
+   remis à zéro au changement de date locale) : budget atteint → `budget-exhausted` jusqu'au
+   lendemain ; tickets du jour atteints → `max-tickets` ; fichier illisible ou daté du futur →
+   `state-unreadable`.
+3. Contrôles du dashboard (#8, lecture seule) : `paused` → `paused` ; `tokens_24h >= cap_tokens` →
+   `cap-reached`. **Échec fermé** (à l'inverse du hook `PreToolUse`) : jeton absent, fichier jeton
+   lisible par d'autres que vous, URL refusée, réseau, délai (5 s), code ≠ 200, redirection ou JSON
+   invalide → `control-unreadable`, aucune session.
+4. Sélection (`gh issue list` du dépôt courant) : statut Project « Prêt », sans `stop-agents`,
+   toutes les dépendances fermées (numéros `#n` après « Dépend de » ; une dépendance vers un autre
+   dépôt rend le ticket inéligible), tri P0→P3 (sans priorité en dernier) puis numéro. Rien →
+   `no-ticket` ; gh en échec, réponse illisible ou liste tronquée (500) → `gh-*`.
+5. Poste du pool (#14, `infra/scripts/pool.sh`, qui relit `stop-agents` et « Prêt ») ; refus →
+   `pool-refused`. Le ticket est compté **avant** la session, et noté (`last_ticket`) : un ticket
+   tenté reste inéligible jusqu'au lendemain, même resté « Prêt » après un échec (→ `no-ticket`
+   s'il est le seul).
+6. Session neuve dans le poste : `claude -p --output-format json`, prompt `/ticket <n>` sur stdin
+   (délai max 4 h ; au délai, tout le groupe de processus de la session est tué). Les tokens
+   (`modelUsage`, sinon `usage` : input, output et cache créé) s'ajoutent au compteur. Le **cache lu
+   est exclu** du total : relu à chaque tour, il gonflerait le budget sans consommation neuve.
+   Sortie illisible = consommation inconnue = **budget du jour épuisé**. Une session finie après
+   minuit compte ses tokens sur le nouveau jour. La sortie n'est jamais conservée.
+   → `ran ticket=<n> tokens=<n|unknown>`.
+
+Le budget est vérifié avant chaque ticket : une session en cours n'est pas interrompue et peut
+dépasser le budget ; la boucle s'arrête alors jusqu'au lendemain.
+
+**Permissions** : la commande par défaut ne contourne aucune permission ; une session sans
+surveillance n'obtient que ce que vos réglages locaux (`.claude/settings*.json`) autorisent.
+Surcharge locale possible : `LOOP_SESSION_CMD`, mais `--dangerously-skip-permissions` et
+`--permission-mode bypassPermissions` sont **refusés** (`session-cmd-refused`, aucune session).
+
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `VVA_LOOP_CONFIG` | fichier de config | `~/.vva/loop.yml` |
+| `VVA_LOOP_DIR` | compteurs, verrou, journal | `~/.vva/loop` |
+| `VVA_INGEST_TOKEN` / `VVA_INGEST_TOKEN_FILE` | jeton Bearer de `/api/v1/control` ; fichier en 600 exigé | `~/.vva/ingest_token` |
+| `LOOP_SESSION_CMD` | commande de session | `claude -p --output-format json` |
+| `VVA_LAUNCH_AGENTS` | dossier du plist | `~/Library/LaunchAgents` |
+
+`make loop-install` rend `tools/agents/launchd/agents-loop.plist.template` (label
+`agent-factory.loop.<dossier du dépôt>`, `PATH` du moment de l'installation réduit à ses entrées absolues, aucun secret), puis
+`launchctl bootstrap gui/<uid>`. launchd lance un tick manqué (Mac en veille) au réveil.
