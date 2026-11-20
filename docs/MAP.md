@@ -73,9 +73,11 @@
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
 - `docs/design/activity.md` — Écran « Activité des agents »
+- `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
+- `docs/telemetry-cablage.md` — Câblage de l'ingestion des événements d'agents (#180)
 - `hooks/lint_file.sh` — PostToolUse(Edit|Write) : corrige puis vérifie le fichier Python modifié. Silencieux si OK
-- `hooks/log_event.sh` — SubagentStart/SubagentStop/PostToolUse : journal JSONL local, source du dashboard (Sprint 
+- `hooks/log_event.sh` — remplacé par tools/telemetry/hook_emit.py (#180)
 - `hooks/quick_tests.sh` — Stop : lint + tests rapides ; renvoie les échecs à Claude (exit 2), une seule relance.
 - `hooks/settings.example.json` — données JSON
 - `infra/deploy/compose.yaml` — Dashboard en prod sur le VPS, derrière le reverse proxy existant (Traefik de n8n).
@@ -128,3 +130,4 @@
 - `tools/telemetry/tests/test_gate.py` — Hook PreToolUse pretool_gate.py (#8) : code 2 si pause, échec sûr (cache 5 min).
 - `tools/telemetry/tests/test_py39.py` — Les scripts lancés par les hooks tournent sous le python3 du Mac (3.9) (#59).
 - `tools/telemetry/tests/test_ship.py` — Expéditeur : JSONL -> POST /api/v1/events par lots, sans perte ni doublon (#4).
+- `tools/telemetry/tests/test_wiring_doc.py` — Procédure de câblage de l'ingestion (#180) : documentée, sans valeur secrète.
