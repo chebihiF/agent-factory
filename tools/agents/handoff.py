@@ -2,8 +2,9 @@
 """Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 
 `check` (hook UserPromptSubmit) demande la note au seuil ; `post` la valide et la poste dans #21 ;
-`latest` relit la dernière note ; `relay` poste puis démarre une session neuve avec cette seule
-note. Aucun contenu de prompt n'est lu ni écrit. Stdlib ; Python 3.9.
+`latest` relit la dernière note ; `relay` (déconseillé : la règle interdit qu'une session en démarre
+une autre) poste puis démarre une session neuve. Aucun contenu de prompt n'est lu ni écrit.
+Stdlib ; Python 3.9.
 """
 
 from __future__ import annotations
@@ -113,8 +114,9 @@ def request_text(tokens: int, threshold: int) -> str:
         f"(seuil {_spaced(threshold)}). "
         "Avant toute autre action : écris la note de passation dans un fichier temporaire "
         f"(≤ {MAX_NOTE_LINES} lignes : Fait / Reste / Fichiers clés / Pièges ; aucun secret ni "
-        "donnée d'enfant), puis lance `tools/agents/bin/handoff.sh relay --note-file <fichier>` "
-        f"(poste la note dans #{ISSUE} et démarre une session neuve qui la reprend)."
+        "donnée d'enfant), poste-la avec `tools/agents/bin/handoff.sh post --note-file <fichier>` "
+        f"(commentaire de #{ISSUE}), puis laisse la relève à une session indépendante "
+        "(règle rules/session-agents.md)."
     )
 
 

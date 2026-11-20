@@ -98,6 +98,7 @@
 - `infra/scripts/test_pool.py` — pool.sh : un ticket = une branche sur un poste libre du pool (#14).
 - `infra/scripts/test_set_dashboard_password.py` — set-dashboard-password.sh (#30) : hash vérifiable, mot de passe jamais écrit ni affiché.
 - `pyproject.toml`
+- `rules/session-agents.md` — Règles de session des agents (enchaînement et passation)
 - `rules/tech-lead.md` — Consignes génériques du tech lead (à recopier dans le fichier de consignes local du projet
 - `scripts/install_agents.py` — Installe agents, skills, hooks et règles de l'usine dans le `.claude/` local d'un projet.
 - `scripts/test_install_agents.py` — install_agents.py : installation locale des agents, skills et hooks dans un projet cible.
@@ -115,6 +116,7 @@
 - `tools/agents/launchd/agents-loop.plist.template` — Boucle autonome planifiée (#18) : rendu par `make loop-install` (agent_loop.py install).
 - `tools/agents/tests/test_agent_loop.py` — Boucle autonome planifiée (#18) : gh, contrôles, pool, session et launchctl sont injectés.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
+- `tools/agents/tests/test_session_rules.py` — Règle de session des agents (#178) : contenu, bornes et référence par le tech lead.
 - `tools/agents/tests/test_skills.py` — Skills versionnés /ticket, /sprint, /deploy-check (#15, #16) : lecture des fichiers seulem
 - `tools/agents/tests/test_token_report.py` — Mesure des tokens par ticket et routage des modèles (#19).
 - `tools/agents/token_report.py` — Tokens par ticket, agent et modèle ; routage des modèles (#19). Voir docs/agents.md.

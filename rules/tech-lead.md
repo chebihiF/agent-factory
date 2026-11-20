@@ -61,4 +61,5 @@ le backlog (DoR). Choix produit structurant jamais discuté → `blocked` « Att
 - Préférer `make …` (silencieux) aux commandes verbeuses ; `scout` pour chercher.
 - Lire des extraits (`offset/limit`, `grep -n`), pas des fichiers entiers.
 - Les hooks (`hooks/`) lancent ruff à chaque édition et lint + tests à l'arrêt : ne pas les relancer à la main.
-- Contexte long : passation automatique (`tools/agents/bin/handoff.sh`, voir `docs/agents.md`).
+- Contexte long : note de passation postée par `tools/agents/bin/handoff.sh post` (voir `docs/agents.md`), relève par session indépendante.
+- Enchaînement des tickets, passation à 150 k tokens, archivage des sessions : `rules/session-agents.md`.

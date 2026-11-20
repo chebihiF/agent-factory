@@ -51,6 +51,13 @@ def test_installation_locale(target: Path) -> None:
     assert (claude / "hooks" / "lint_file.sh").is_file()
 
 
+def test_regle_de_session_installee(target: Path) -> None:
+    assert ia.main([str(target)]) == 0
+    installed = target / ".claude" / "rules" / "session-agents.md"
+    assert installed.is_file()
+    assert installed.read_bytes() == (ROOT / "rules" / "session-agents.md").read_bytes()
+
+
 def test_exclude_contient_claude_et_claude_md(target: Path) -> None:
     ia.main([str(target)])
     lines = exclude_lines(target)
