@@ -1,3 +1,39 @@
+# Installer les agents dans un projet (#71)
+
+Les agents, skills, hooks et règles de l'usine vivent ici (`agents/`, `skills/`, `hooks/`,
+`rules/`). Un projet les utilise **sans les commiter** : ils sont copiés dans son `.claude/`
+local.
+
+```sh
+make install-agents PROJECT=../mon-projet                        # = scripts/install_agents.py ../mon-projet
+make install-agents PROJECT=../mon-projet OVERLAY=surcouche.md   # avec la partie propre au projet
+```
+
+Ce que fait la commande (stdlib, Python 3.9 ou 3.12) :
+
+| Étape | Détail |
+|-------|--------|
+| Contrôle | refuse une cible inexistante, hors dépôt git, qui n'est pas la racine du dépôt, ou dont `git ls-files -- .claude CLAUDE.md` n'est pas vide (`git rm --cached` d'abord) ; refuse un `.claude` ou `CLAUDE.md` lien symbolique ; message distinct si `git` est introuvable |
+| Exclusion | ajoute `.claude/` et `CLAUDE.md` à `<cible>/.git/info/exclude` (avant toute copie, sans doublon, contenu existant conservé ; fonctionne dans un worktree) |
+| Copie | `agents/`, `skills/`, `hooks/`, `rules/` vers `<cible>/.claude/<même nom>/` ; liens symboliques ignorés côté source, refusés côté cible (fichier ou dossier parent), destination toujours sous `<cible>/.claude/` |
+| Manifeste | `<cible>/.claude/.agent-factory-manifest` liste les fichiers installés ; à l'installation suivante, ceux qui ne font plus partie de l'usine sont retirés (dossiers vidés compris), jamais un fichier absent du manifeste |
+| Surcouche | `--overlay <fichier>` : le fichier est inséré dans un bloc balisé `agent-factory:overlay` de `<cible>/CLAUDE.md` (créé si absent ; une surcouche qui contient elle-même les marqueurs est refusée, un bloc existant sans marqueur de fin aussi) |
+| Git | aucun `git add`, aucun commit dans la cible |
+
+- **Idempotente** : relancer met à jour les fichiers de l'usine (ils écrasent la version locale) ;
+  les fichiers propres au projet (`settings.json`, un agent maison, le reste de `CLAUDE.md`) ne
+  sont jamais touchés ni supprimés. Le bloc de surcouche est remplacé, pas dupliqué.
+- **Surcouche** : tout ce qui est propre au projet (machines, chemins, dépôt, règles produit)
+  va dans un fichier du projet, hors de l'usine. Aucun secret dedans : `CLAUDE.md` reste local,
+  mais la surcouche peut être copiée par erreur ailleurs.
+- `rules/tech-lead.md` est installé dans `.claude/rules/` ; le `CLAUDE.md` du projet y renvoie
+  ou le recopie (la surcouche s'y ajoute).
+- **Limite** : la cible `PROJECT` ne doit pas contenir d'apostrophe (`'`) avec `make` (le chemin est
+  entre apostrophes dans le Makefile) ; sinon appeler directement
+  `python3 scripts/install_agents.py "<chemin>"`.
+- Le câblage des hooks (`.claude/settings.json`) reste manuel : gabarit `hooks/settings.example.json`.
+- Vérification : `git -C <cible> status --porcelain` ne montre rien, `git -C <cible> ls-files .claude CLAUDE.md` est vide.
+
 # Agents : mesure des tokens et routage des modèles (#19)
 
 Outils : `tools/agents/bin/token-report.sh` (enveloppe) et `tools/agents/token_report.py`

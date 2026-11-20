@@ -24,22 +24,22 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["scripts", "workflows"]
+extend-exclude = ["infra/scripts", "workflows"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
 ignore = ["S101"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["dashboard", "next_version", "hook_emit", "ship", "token_report"]
+known-first-party = ["dashboard", "install_agents", "next_version", "hook_emit", "ship", "token_report"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["apps/dashboard/src", "infra/scripts", "tools/telemetry", "tools/agents"]
+files = ["apps/dashboard/src", "infra/scripts", "scripts", "tools/telemetry", "tools/agents"]
 
 [tool.pytest.ini_options]
-testpaths = ["apps/dashboard/tests", "infra/scripts", "tools/telemetry/tests", "tools/agents/tests"]
-pythonpath = ["infra/scripts", "tools/telemetry", "tools/agents"]
+testpaths = ["apps/dashboard/tests", "infra/scripts", "scripts", "tools/telemetry/tests", "tools/agents/tests"]
+pythonpath = ["infra/scripts", "scripts", "tools/telemetry", "tools/agents"]
 filterwarnings = ["ignore::DeprecationWarning"]
 addopts = "-q --no-header -p no:cacheprovider"
