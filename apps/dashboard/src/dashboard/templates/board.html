@@ -137,6 +137,28 @@
       {% endif %}
     </section><!-- /avancement -->
 
+    <section id="tickets" class="panel" aria-labelledby="h-tickets">
+      <h2 id="h-tickets">Liste des tickets <span class="counter">{{ plural(b.tickets | length + b.tickets_more, "ticket", "tickets") }}</span></h2>
+      {% if b.tickets %}
+      <ul class="tickets">
+        {% for t in b.tickets %}
+        <li class="ticket status-{{ t.status }}">
+          <h3><a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}<span class="sr-only"> (nouvel onglet)</span></a></h3>
+          <p class="meta"><strong class="status">{{ t.status_label }}</strong> <span>{{ t.sprint or "Sprint non renseigné" }}</span> <span>{{ t.epic or "Sans épique" }}</span></p>
+          {% if t.pr_url %}<a class="action" href="{{ t.pr_url }}" target="_blank" rel="noopener">Voir la PR sur GitHub ↗<span class="sr-only"> (nouvel onglet)</span></a>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% if b.tickets_more %}<p class="muted">{{ b.tickets_more }} de plus</p>{{ external("https://github.com/" ~ repo ~ "/issues", "Ouvrir les issues sur GitHub") }}{% endif %}
+      {% elif b.github_error_at %}
+      {% call empty("Les tickets ne peuvent pas être lus", columns_svg) %}<p>GitHub ne répond pas pour l'instant. Attends une minute puis clique sur « Recharger les données », ou ouvre les issues sur GitHub.</p><a class="action" href="{{ reload_url }}">Recharger les données</a>{{ external("https://github.com/" ~ repo ~ "/issues", "Ouvrir les issues sur GitHub") }}{% endcall %}
+      {% elif not b.tickets_here %}
+      {% call empty("Aucun ticket pour " ~ b.project, columns_svg) %}<p>Les tickets suivis sont ceux d'un autre dépôt.</p><a class="action" href="/#tickets">Afficher tous les projets</a>{% endcall %}
+      {% else %}
+      {% call empty("Aucun ticket pour l'instant", columns_svg) %}<p>La liste se remplit dès qu'un ticket existe sur GitHub.</p>{{ external("https://github.com/" ~ repo ~ "/issues", "Ouvrir les issues sur GitHub") }}{% endcall %}
+      {% endif %}
+    </section><!-- /tickets -->
+
     <section id="quotas" class="panel" aria-labelledby="h-quotas">
       <h2 id="h-quotas">Quotas et tokens</h2>
       {% if b.tokens_week %}

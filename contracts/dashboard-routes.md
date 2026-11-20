@@ -69,7 +69,7 @@ compte dans la limite qu'elle réussisse ou non.
 Tableau de bord unique (#179, spec `docs/design/dashboard-refonte.md`) : **lecture seule**. Aucune
 commande, aucun `hx-post` ni `<form method="post">` ; les actions sont des liens GitHub
 (`target="_blank" rel="noopener"`, « (nouvel onglet) » dans le nom accessible), des ancres
-internes et le formulaire GET du filtre. Réponses en `no-store`. Quatre sections :
+internes et le formulaire GET du filtre. Réponses en `no-store`. Cinq sections :
 
 - **À faire par toi** (lecture GitHub ci-dessous, dépôt `VVA_GITHUB_REPO`) : « ? Attend ta
   réponse » = ticket ouvert dont le corps contient une ligne `Attend l'utilisateur : <question>`
@@ -85,6 +85,19 @@ internes et le formulaire GET du filtre. Réponses en `no-store`. Quatre section
   (« ▲ » en gras au-delà de 2 min pour un agent au travail). Actifs, puis un inactif par rôle (5 au plus).
 - **Avancement des tickets** : colonnes Backlog / Prêt / En cours / Revue / Livré (statuts de la
   lecture GitHub ci-dessous), compteur, 3 titres par colonne (plus récents d'abord) et « N de plus ».
+- **Liste des tickets** (#182, section `#tickets`, même source que l'Avancement) : une ligne par
+  ticket suivi, de Backlog à Livré puis les plus récents d'abord, 100 au plus (« N de plus » et lien
+  vers les issues GitHub). Chaque ligne : titre (lien GitHub, nouvel onglet), statut (« ○ Backlog »,
+  « ◇ Prêt », « ● En cours », « ↗ Revue », « ✓ Livré », forme et mot), sprint, épique, lien vers la
+  PR ouverte qui le ferme. Forme d'une ligne : [`tickets.schema.json`](tickets.schema.json) (ajout
+  rétrocompatible : aucune route ni champ existant modifié). **Sprint** = titre du jalon (milestone)
+  GitHub, sinon label `sprint-N` (« Sprint N »), sinon « Sprint non renseigné » : l'itération du Project
+  GitHub n'est pas lue (GraphQL, jeton requis ; décision D20 = aucun jeton). **Épique** = titre de
+  l'issue `epic` citée dans le corps (« Epic #72 », « Épique : #2 » ; hors blocs de code) ; épique
+  citée mais absente de la lecture : « Épique hors de la liste lue » ; « Sans épique » seulement sans
+  citation. GitHub injoignable et rien en cache : « Les tickets ne peuvent pas être lus » + « Recharger
+  les données » et lien vers les issues. Filtre sur un autre projet : « Aucun ticket pour <projet> ».
+  Aucun numéro de ticket affiché.
 - **Quotas et tokens** : jauge = tokens des 24 h glissantes ÷ plafond (`controls.cap_tokens`, lu sans
   écrire) ; « ✓ Confortable » < 70 % ≤ « ▲ Attention » ≤ 90 % < « ✖ Presque épuisé » ; tokens par
   agent (24 h), par jour (7 jours, date UTC de `ts`) et 5 tickets les plus gourmands (7 jours) :

@@ -27,6 +27,9 @@ LATE_AFTER = timedelta(minutes=2)  # signe de vie en retard pour un agent au tra
 CARDS_PER_COLUMN = 3
 EVENT_WINDOW = 500  # événements lus pour « Qui fait quoi »
 MAX_INACTIVE = 5  # agents au repos montrés (un par rôle)
+MAX_LISTED = 100  # lignes de la liste des tickets (le reste : lien vers les issues GitHub)
+UNKNOWN_EPIC = "Épique hors de la liste lue"
+NO_SPRINT = "Sprint non renseigné"
 TOP_TICKETS = 5
 DAYS = 7
 WARN_PERCENT, DANGER_PERCENT = 70, 90
@@ -50,6 +53,13 @@ COLUMNS = (
     ("review", "Revue"),
     ("delivered", "Livré"),
 )
+STATUS_LABELS = {
+    "backlog": "○ Backlog",
+    "ready": "◇ Prêt",
+    "in_progress": "● En cours",
+    "review": "↗ Revue",
+    "delivered": "✓ Livré",
+}
 WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 MONTHS = (
     "janvier",
@@ -129,6 +139,24 @@ class Column:
 
 
 @dataclass(frozen=True)
+class Ticket:
+    """Ligne de la liste des tickets (forme : contracts/tickets.schema.json, #182)."""
+
+    number: int
+    title: str
+    status: str
+    sprint: str | None
+    epic: str | None
+    url: str
+    pr: int | None = None
+    pr_url: str | None = None
+
+    @property
+    def status_label(self) -> str:
+        return STATUS_LABELS[self.status]
+
+
+@dataclass(frozen=True)
 class Gauge:
     used: int
     cap: int
@@ -163,6 +191,8 @@ class Board:
     todos: list[Todo]
     agents: list[AgentRow]
     columns: list[Column]
+    tickets: list[Ticket]
+    tickets_more: int
     gauge: Gauge
     by_agent: list[Bar]
     days: list[Bar]
@@ -290,15 +320,44 @@ def build_todos(snapshot: github.Snapshot, now: datetime) -> list[Todo]:
     return answers + reviews + decisions
 
 
-def build_columns(snapshot: github.Snapshot) -> list[Column]:
-    in_review = {p.issue for p in snapshot.pulls if p.issue is not None}
-    counted = [
+def _counted(snapshot: github.Snapshot) -> list[github.Issue]:
+    """Tickets suivis : ni épiques, ni labels ignorés, ni fermés « not planned »."""
+    return [
         i
         for i in snapshot.issues
         if "epic" not in i.labels
         and not i.labels & github.IGNORED_LABELS
         and (i.completed or not i.closed)
     ]
+
+
+def build_tickets(snapshot: github.Snapshot) -> list[Ticket]:
+    """Tous les tickets suivis, par colonne (Backlog … Livré) puis les plus récents d'abord."""
+    in_review = {p.issue: p for p in snapshot.pulls if p.issue is not None}
+    epics = {i.number: i.title for i in snapshot.issues if "epic" in i.labels}
+    order = [key for key, _ in COLUMNS]
+    rows = [
+        (
+            order.index(status := github.classify(i, set(in_review))),
+            Ticket(
+                i.number,
+                i.title,
+                status,
+                i.sprint,
+                None if i.epic is None else epics.get(i.epic, UNKNOWN_EPIC),
+                _issue_url(i.number),
+                pr.number if (pr := in_review.get(i.number)) else None,
+                _pull_url(pr.number) if pr else None,
+            ),
+        )
+        for i in _recent_first(_counted(snapshot))
+    ]
+    return [ticket for _, ticket in sorted(rows, key=lambda row: row[0])]  # tri stable
+
+
+def build_columns(snapshot: github.Snapshot) -> list[Column]:
+    in_review = {p.issue for p in snapshot.pulls if p.issue is not None}
+    counted = _counted(snapshot)
     grouped: dict[str, list[github.Issue]] = {key: [] for key, _ in COLUMNS}
     for item in counted:
         grouped[github.classify(item, in_review)].append(item)
@@ -432,6 +491,7 @@ def build(
     tickets_here = project in (None, tracked())
     shown = snapshot if tickets_here else github.Snapshot()
     state, minutes = ingestion(conn, now)
+    listed = build_tickets(shown)
     return Board(
         today=french_date(now),
         updated_at=now.strftime("%H:%M:%S"),
@@ -445,6 +505,8 @@ def build(
         todos=build_todos(shown, now),
         agents=build_agents(events, now, snapshot),
         columns=build_columns(shown),
+        tickets=listed[:MAX_LISTED],
+        tickets_more=max(0, len(listed) - MAX_LISTED),
         gauge=gauge(controls.tokens_24h(conn, now), db.read_controls(conn)[2]),
         by_agent=build_by_agent(conn, now),
         days=build_days(conn, now),

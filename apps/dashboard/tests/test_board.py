@@ -5,6 +5,8 @@ GitHub est toujours simulé ; aucune donnée réelle.
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import re
 import sqlite3
 from collections.abc import Callable
@@ -13,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 
+import jsonschema  # type: ignore[import-untyped]  # pas de stubs (dépendance de dev)
 import pytest
 from fastapi.testclient import TestClient
 
@@ -521,3 +524,147 @@ def test_question_is_a_line_of_its_own_outside_quotes_and_code(
 ) -> None:
     issues, _ = github_api.parse_issues([issue(1, "T", body=body)])
     assert issues[0].question == question
+
+
+# --- Liste des tickets (#182) : titre, statut, sprint, épique, PR --------------------------
+SCHEMA = ROOT / "contracts" / "tickets.schema.json"
+
+
+def tickets_github() -> list[dict[str, Any]]:
+    return [
+        issue(72, "Usine d'agents", "epic", body=""),
+        issue(
+            182,
+            "Vue Tickets",
+            "P1",
+            "in-progress",
+            body="Parent : #179 · Epic #72",
+            milestone={"title": "Sprint 3"},
+        ),
+        issue(183, "Idée isolée", "P2", body="Aucune référence."),
+        issue(184, "Ticket en revue", "P1", body="Épique : #72"),
+        issue(90, "feat: revue", body="Closes #184", pull_request={}),
+        issue(5, "Câblage livré", state="closed", reason="completed", body="Epic #72"),
+    ]
+
+
+def test_each_ticket_shows_title_status_sprint_and_epic(client: TestClient, github: GitHub) -> None:
+    github(tickets_github())
+    plain = text(section(client.get("/").text, "tickets"))
+    assert "Vue Tickets" in plain and "● En cours" in plain
+    assert "Sprint 3" in plain and "Usine d'agents" in plain
+    assert "↗ Revue" in plain and "✓ Livré" in plain and "○ Backlog" in plain
+    assert "Idée isolée" in plain
+    assert "Usine d'agents" in plain  # l'épique elle-même n'est pas une ligne
+    assert "#182" not in plain  # aucun numéro brut affiché
+
+
+def test_epic_is_never_listed_as_a_ticket(client: TestClient, github: GitHub) -> None:
+    github(tickets_github())
+    html = section(client.get("/").text, "tickets")
+    assert html.count('<li class="ticket ') == 4
+
+
+def test_without_epic_is_shown_only_for_the_ticket_that_has_none(
+    client: TestClient, github: GitHub
+) -> None:
+    github(tickets_github())
+    html = section(client.get("/").text, "tickets")
+    assert text(html).count("Sans épique") == 1
+    row = next(r for r in html.split('<li class="ticket ')[1:] if "Idée isolée" in r)
+    assert "Sans épique" in row
+
+
+def test_ticket_without_sprint_says_so(client: TestClient, github: GitHub) -> None:
+    github(tickets_github())
+    row = next(
+        r
+        for r in section(client.get("/").text, "tickets").split('<li class="ticket ')[1:]
+        if "Idée isolée" in r
+    )
+    assert "Sprint non renseigné" in text(row)
+
+
+def test_sprint_can_come_from_a_label(client: TestClient, github: GitHub) -> None:
+    github([issue(8, "Via label", "P1", "sprint-4")])
+    assert "Sprint 4" in text(section(client.get("/").text, "tickets"))
+
+
+def test_ticket_links_to_github_and_to_its_open_pull_request(
+    client: TestClient, github: GitHub
+) -> None:
+    github(tickets_github())
+    html = section(client.get("/").text, "tickets")
+    assert f'href="{ISSUES_URL}/182"' in html
+    assert f'href="https://github.com/{REPO}/pull/90"' in html
+    assert html.count('target="_blank" rel="noopener"') >= 2
+    assert "(nouvel onglet)" in html
+
+
+def test_tickets_list_is_capped_with_a_link_to_the_rest(client: TestClient, github: GitHub) -> None:
+    github([issue(n, f"Prêt {n}", "P1") for n in range(10, 10 + board.MAX_LISTED + 3)])
+    html = section(client.get("/").text, "tickets")
+    assert html.count('<li class="ticket ') == board.MAX_LISTED
+    assert "3 de plus" in text(html) and ISSUES_URL in html
+
+
+def test_github_down_explains_what_to_do_without_a_blank_page(
+    client: TestClient, github: GitHub
+) -> None:
+    github(down)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    plain = text(section(resp.text, "tickets"))
+    assert "Les tickets ne peuvent pas être lus" in plain
+    assert "Recharger les données" in plain and "issues sur GitHub" in plain
+
+
+def test_empty_tickets_list_has_a_friendly_empty_state(client: TestClient) -> None:
+    plain = text(section(client.get("/").text, "tickets"))
+    assert "Aucun ticket pour l'instant" in plain
+
+
+def test_other_project_filter_hides_the_ticket_list(client: TestClient, github: GitHub) -> None:
+    github(tickets_github())
+    seed((ago_iso(seconds=5), "PreToolUse", "qa", "q1", 1, "agent-factory"))
+    plain = text(section(client.get("/?projet=agent-factory").text, "tickets"))
+    assert "Vue Tickets" not in plain and "Aucun ticket pour agent-factory" in plain
+
+
+def test_ticket_row_matches_the_contract_schema(github: GitHub) -> None:
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    snapshot = github_api.Snapshot(*github_api.parse_issues(tickets_github()))
+    rows = board.build_tickets(snapshot)
+    assert len(rows) == 4
+    for row in rows:
+        jsonschema.validate(dataclasses.asdict(row), schema)
+    by_title = {r.title: r for r in rows}
+    assert by_title["Vue Tickets"].epic == "Usine d'agents"
+    assert by_title["Vue Tickets"].sprint == "Sprint 3"
+    assert by_title["Ticket en revue"].pr == 90
+    assert by_title["Idée isolée"].epic is None
+
+
+def test_epic_reference_without_known_epic_is_not_sans_epique(github: GitHub) -> None:
+    snapshot = github_api.Snapshot(*github_api.parse_issues([issue(8, "Orpheline", "P1")]))
+    assert board.build_tickets(snapshot)[0].epic == board.UNKNOWN_EPIC
+
+
+def test_epic_reference_in_a_code_block_is_ignored() -> None:
+    body = "```\nEpic #72\n```"
+    issues, _ = github_api.parse_issues([issue(8, "Code", "P1", body=body)])
+    assert issues[0].epic is None
+
+
+def test_ticket_list_is_readable_at_360px() -> None:
+    css = (STATIC / "board.css").read_text(encoding="utf-8")
+    assert ".ticket " in css and "overflow-wrap: anywhere" in css
+    assert "min-width: 0" in css
+    source = TEMPLATE.read_text(encoding="utf-8")
+    assert "hx-post" not in source and 'method="post"' not in source
+
+
+def test_contract_documents_the_ticket_list() -> None:
+    contract = CONTRACT.read_text(encoding="utf-8")
+    assert "tickets.schema.json" in contract and "Liste des tickets" in contract
+    assert "tickets.schema.json" in (ROOT / "contracts" / "README.md").read_text(encoding="utf-8")
