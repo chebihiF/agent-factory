@@ -3,7 +3,7 @@
 (function () {
   "use strict";
   // Filtre par projet : formulaire GET natif (?projet=). Flèches = déplacer la sélection sans
-  // recharger (WCAG 3.2.2) ; clic, Espace ou Entrée envoient. Même règle que live.js (#68).
+  // recharger (WCAG 3.2.2) ; clic, Espace ou Entrée envoient (#68).
   var filter = document.querySelector("form[data-autosubmit]");
   if (filter) {
     var FOCUS_KEY = "vva-filter-focus";

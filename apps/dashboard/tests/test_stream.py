@@ -250,22 +250,21 @@ def test_contract_documents_stream() -> None:
         assert needle in text, needle
 
 
-def test_activity_page_is_wired_to_the_stream(client: TestClient) -> None:
+def test_interactions_page_is_wired_to_the_stream(client: TestClient) -> None:
     seed(3)
-    html = client.get("/activity").text
-    assert re.search(r'<main data-stream data-last-id="3" data-refresh="#agents">', html)
-    assert '<ol aria-live="polite" data-feed>' in html
+    html = client.get("/interactions").text
+    assert re.search(r'<main data-stream data-last-id="3" data-refresh="#sessions">', html)
     assert '<script src="/static/live.js" defer></script>' in html
 
 
-def test_activity_error_page_has_no_stream(
+def test_interactions_error_page_has_no_stream(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def broken(conn: sqlite3.Connection, limit: int = 100) -> list[Any]:
+    def broken(conn: sqlite3.Connection, now: Any) -> list[Any]:
         raise sqlite3.OperationalError("x")
 
-    monkeypatch.setattr("dashboard.activity.latest_events", broken)
-    assert "data-stream" not in client.get("/activity").text
+    monkeypatch.setattr("dashboard.interactions.load_sessions", broken)
+    assert "data-stream" not in client.get("/interactions").text
 
 
 # #68 : le projet est exposé dans le flux

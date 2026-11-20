@@ -16,7 +16,8 @@ from urllib.error import URLError
 import pytest
 from fastapi.testclient import TestClient
 
-from dashboard import auth, board, db, progress
+from dashboard import auth, board, db
+from dashboard import github as github_api
 from dashboard.main import app
 
 PASSWORD = "mot-de-passe-de-test"  # noqa: S105 - valeur factice de test
@@ -62,7 +63,7 @@ def github(monkeypatch: pytest.MonkeyPatch) -> Callable[[list[dict[str, Any]] | 
             def fetch(path: str) -> Any:
                 return issues if "/issues" in path else []
 
-        monkeypatch.setattr(progress, "CACHE", progress.GithubCache(fetch))
+        monkeypatch.setattr(github_api, "CACHE", github_api.GithubCache(fetch))
 
     use([])
     return use
@@ -518,5 +519,5 @@ def test_github_texts_are_escaped(client: TestClient, github: GitHub) -> None:
 def test_question_is_a_line_of_its_own_outside_quotes_and_code(
     body: str, question: str | None
 ) -> None:
-    issues, _ = progress.parse_issues([issue(1, "T", body=body)])
+    issues, _ = github_api.parse_issues([issue(1, "T", body=body)])
     assert issues[0].question == question

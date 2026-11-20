@@ -1,6 +1,6 @@
 """GET / : tableau de bord unique, en lecture seule (#179, spec docs/design/dashboard-refonte.md).
 
-Assemble ce qui est déjà collecté : tickets et PR (cache GitHub de `progress`), événements
+Assemble ce qui est déjà collecté : tickets et PR (cache de `github`), événements
 d'agents (`events`), tokens (`token_usage`) et plafond (`controls`). Aucune écriture : le plafond
 est lu tel quel (jamais `controls.current_state`, qui peut mettre en pause).
 Contrat : contracts/dashboard-routes.md.
@@ -20,11 +20,13 @@ from fastapi import APIRouter, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from dashboard import activity, auth, controls, db, progress, tokens
+from dashboard import activity, auth, controls, db, github, tokens
 
 SILENCE_AFTER = timedelta(minutes=5)  # ingestion muette au-delà (spec, à confirmer)
 LATE_AFTER = timedelta(minutes=2)  # signe de vie en retard pour un agent au travail
 CARDS_PER_COLUMN = 3
+EVENT_WINDOW = 500  # événements lus pour « Qui fait quoi »
+MAX_INACTIVE = 5  # agents au repos montrés (un par rôle)
 TOP_TICKETS = 5
 DAYS = 7
 WARN_PERCENT, DANGER_PERCENT = 70, 90
@@ -213,7 +215,7 @@ def bars(items: Iterable[tuple[str, int]]) -> list[Bar]:
 
 
 def _parse(value: str | None) -> datetime | None:
-    return progress._parse_ts(value) if value else None  # noqa: SLF001 - même module métier
+    return github.parse_ts(value) if value else None
 
 
 def _age(value: str | None, now: datetime) -> str:
@@ -224,36 +226,36 @@ def _age(value: str | None, now: datetime) -> str:
 # --- GitHub : à faire et avancement -------------------------------------------------------
 def tracked() -> str:
     """Projet (nom court du dépôt `VVA_GITHUB_REPO`) dont les tickets sont lus sur GitHub."""
-    return progress.repo().split("/")[1]
+    return github.repo().split("/")[1]
 
 
-def _titles(snapshot: progress.Snapshot) -> dict[TicketKey, str]:
+def _titles(snapshot: github.Snapshot) -> dict[TicketKey, str]:
     """Titres des seuls tickets du dépôt suivi : le même numéro ailleurs reste inconnu."""
     return {(tracked(), i.number): i.title for i in snapshot.issues}
 
 
 def _issue_url(number: int) -> str:
-    return f"https://github.com/{progress.repo()}/issues/{number}"
+    return f"https://github.com/{github.repo()}/issues/{number}"
 
 
 def _pull_url(number: int) -> str:
-    return f"https://github.com/{progress.repo()}/pull/{number}"
+    return f"https://github.com/{github.repo()}/pull/{number}"
 
 
-def _recent_first(issues: Iterable[progress.Issue]) -> list[progress.Issue]:
+def _recent_first(issues: Iterable[github.Issue]) -> list[github.Issue]:
     by_number = sorted(issues, key=lambda i: i.number, reverse=True)
     return sorted(by_number, key=lambda i: i.updated_at or "", reverse=True)
 
 
-def _open_tickets(snapshot: progress.Snapshot) -> list[progress.Issue]:
+def _open_tickets(snapshot: github.Snapshot) -> list[github.Issue]:
     return [
         i
         for i in snapshot.issues
-        if not i.closed and "epic" not in i.labels and not i.labels & progress.IGNORED_LABELS
+        if not i.closed and "epic" not in i.labels and not i.labels & github.IGNORED_LABELS
     ]
 
 
-def build_todos(snapshot: progress.Snapshot, now: datetime) -> list[Todo]:
+def build_todos(snapshot: github.Snapshot, now: datetime) -> list[Todo]:
     """Questions « Attend l'utilisateur », PR ouvertes, tickets bloqués (dans cet ordre)."""
     tickets = _recent_first(_open_tickets(snapshot))
     titles = {i.number: i.title for i in snapshot.issues}
@@ -288,18 +290,18 @@ def build_todos(snapshot: progress.Snapshot, now: datetime) -> list[Todo]:
     return answers + reviews + decisions
 
 
-def build_columns(snapshot: progress.Snapshot) -> list[Column]:
+def build_columns(snapshot: github.Snapshot) -> list[Column]:
     in_review = {p.issue for p in snapshot.pulls if p.issue is not None}
     counted = [
         i
         for i in snapshot.issues
         if "epic" not in i.labels
-        and not i.labels & progress.IGNORED_LABELS
+        and not i.labels & github.IGNORED_LABELS
         and (i.completed or not i.closed)
     ]
-    grouped: dict[str, list[progress.Issue]] = {key: [] for key, _ in COLUMNS}
+    grouped: dict[str, list[github.Issue]] = {key: [] for key, _ in COLUMNS}
     for item in counted:
-        grouped[progress.classify(item, in_review)].append(item)
+        grouped[github.classify(item, in_review)].append(item)
     return [
         Column(
             key,
@@ -316,7 +318,7 @@ def build_columns(snapshot: progress.Snapshot) -> list[Column]:
 
 # --- Événements : qui fait quoi -----------------------------------------------------------
 def build_agents(
-    events: list[activity.Event], now: datetime, snapshot: progress.Snapshot
+    events: list[activity.Event], now: datetime, snapshot: github.Snapshot
 ) -> list[AgentRow]:
     """`events` du plus récent au plus ancien ; actifs d'abord, puis un inactif par rôle."""
     titles = _titles(snapshot)
@@ -340,7 +342,7 @@ def build_agents(
         row = _agent_row(latest, when, now, started, titles, blocked)
         if row.state != "idle":
             working.append(row)
-        elif all(r.role != row.role for r in idle) and len(idle) < progress.MAX_INACTIVE:
+        elif all(r.role != row.role for r in idle) and len(idle) < MAX_INACTIVE:
             idle.append(row)
     seen = {r.role for r in working}
     return working + [r for r in idle if r.role not in seen]
@@ -396,7 +398,7 @@ def _day_label(day: datetime) -> str:
 
 
 def build_by_ticket(
-    conn: sqlite3.Connection, now: datetime, snapshot: progress.Snapshot
+    conn: sqlite3.Connection, now: datetime, snapshot: github.Snapshot
 ) -> list[Bar]:
     titles = _titles(snapshot)
     cutoff = (now - timedelta(days=DAYS)).isoformat(timespec="microseconds")
@@ -419,16 +421,16 @@ def build_by_agent(conn: sqlite3.Connection, now: datetime) -> list[Bar]:
 # --- Assemblage ---------------------------------------------------------------------------
 def build(
     conn: sqlite3.Connection,
-    snapshot: progress.Snapshot,
+    snapshot: github.Snapshot,
     error_at: datetime | None,
     requested: str,
     now: datetime,
 ) -> Board:
     projects = activity.agent_counts(conn)
     project = requested if requested and requested in projects else None
-    events = activity.latest_events(conn, progress.EVENT_WINDOW, project)
+    events = activity.latest_events(conn, EVENT_WINDOW, project)
     tickets_here = project in (None, tracked())
-    shown = snapshot if tickets_here else progress.Snapshot()
+    shown = snapshot if tickets_here else github.Snapshot()
     state, minutes = ingestion(conn, now)
     return Board(
         today=french_date(now),
@@ -451,7 +453,7 @@ def build(
 
 
 def load(requested: str) -> Board:
-    snapshot, error_at = progress.CACHE.get()
+    snapshot, error_at = github.CACHE.get()
     with db.connect() as conn:
         return build(conn, snapshot, error_at, requested, datetime.now(UTC))
 
@@ -463,7 +465,7 @@ async def board_page(request: Request, projet: str = Query("")) -> Response:
     reload_url = "/" + (f"?{urlencode({'projet': projet})}" if projet else "")
     context: dict[str, object] = {
         "reload_url": reload_url,
-        "repo": progress.repo(),
+        "repo": github.repo(),
         "b": None,
         "db_error_at": None,
     }

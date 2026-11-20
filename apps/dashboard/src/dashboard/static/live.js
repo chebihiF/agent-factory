@@ -2,42 +2,6 @@
 // Le DOM est construit via textContent / DOMParser : aucune donnée n'est injectée comme HTML.
 (function () {
   "use strict";
-  // Filtre par projet (#68) : formulaire GET natif (?projet=, lien partageable).
-  // WCAG 3.2.2 : les flèches déplacent la sélection du radio sans recharger la page (le focus
-  // reste en place) ; clic, Espace ou Entrée envoient. Après un envoi au clavier, le focus revient
-  // sur le radio coché de la page rechargée.
-  var filter = document.querySelector("form[data-autosubmit]");
-  if (filter) {
-    var FOCUS_KEY = "vva-filter-focus";
-    var lastKey = "";
-    var viaKeyboard = false;
-    var submitFilter = function () {
-      try { if (viaKeyboard) window.sessionStorage.setItem(FOCUS_KEY, "1"); } catch (e) { /* ignoré */ }
-      filter.requestSubmit();
-    };
-    filter.addEventListener("pointerdown", function () { lastKey = ""; viaKeyboard = false; });
-    filter.addEventListener("keydown", function (e) {
-      lastKey = e.key;
-      viaKeyboard = true;
-      if (e.key === "Enter") { e.preventDefault(); submitFilter(); }
-    });
-    filter.addEventListener("change", function () {
-      if (lastKey.indexOf("Arrow") !== 0) submitFilter(); // ArrowDown/Up/Left/Right : pas d'envoi
-    });
-    try {
-      if (window.sessionStorage.getItem(FOCUS_KEY)) {
-        window.sessionStorage.removeItem(FOCUS_KEY);
-        var checked = filter.querySelector('input[name="projet"]:checked');
-        if (checked) checked.focus();
-      }
-    } catch (e) { /* stockage indisponible : le focus n'est simplement pas rendu */ }
-  }
-
-  function currentProject() {
-    var checked = document.querySelector('input[name="projet"]:checked');
-    return checked ? checked.value : "";
-  }
-
   var root = document.querySelector("[data-stream]");
   if (!root || !window.EventSource) return;
 
@@ -137,10 +101,8 @@
     var ev;
     try { ev = JSON.parse(message.data); } catch (e) { return; }
     var feed = document.querySelector("[data-feed]");
-    var project = currentProject();
-    var matches = !project || ev.project === project; // autre projet : seuls les compteurs bougent
-    if (feed && matches) addToFeed(feed, ev);
-    if (matches && refreshSelector && !document.querySelector(refreshSelector)) {
+    if (feed) addToFeed(feed, ev);
+    if (refreshSelector && !document.querySelector(refreshSelector)) {
       window.location.reload(); // état vide : la page n'a encore ni tableau ni flux à compléter
       return;
     }

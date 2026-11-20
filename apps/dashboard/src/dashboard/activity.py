@@ -1,18 +1,16 @@
-"""GET /activity : 100 derniers événements d'agents (contrat : contracts/dashboard-routes.md)."""
+"""Lecture des événements d'agents, partagée par `/`, `/interactions` et `/stream`.
+
+La page `/activity` a été retirée par #179 (tableau de bord unique) ; contrat :
+contracts/dashboard-routes.md.
+"""
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from urllib.parse import urlencode
 
-from fastapi import APIRouter, Query, Request
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
-
-from dashboard import auth, db
+from dashboard import db
 
 MAX_EVENTS = 100
 _COLUMNS = "event_id, ts, hook_event_name, agent_type, agent_id, tool_name, project, issue, model"
@@ -37,13 +35,9 @@ SELECT project, COUNT(*) FROM (
 """
 # Projets toujours proposés par le filtre (#68), même sans événement ; les autres s'ajoutent.
 KNOWN_PROJECTS = (db.DEFAULT_PROJECT, "agent-factory")
-BADGES = ("badge-info", "badge-warn", "badge-ok", "badge-neutral")
 _LAST_ID = "SELECT COALESCE(MAX(rowid), 0) FROM events"
 # Sans signe de vie depuis ce délai, un agent n'est plus « en cours » (#181).
 SILENT_AFTER = timedelta(minutes=30)
-
-log = logging.getLogger(__name__)
-router = APIRouter()
 
 
 @dataclass(frozen=True)
@@ -82,33 +76,6 @@ def agent_counts(conn: sqlite3.Connection, limit: int = MAX_EVENTS) -> dict[str,
     return {name: found.get(name, 0) for name in names}
 
 
-@dataclass(frozen=True)
-class View:
-    """Page /activity : `project` None = tous ; `counts` = agents par projet ("" = tous)."""
-
-    events: list[Event]
-    project: str | None
-    counts: dict[str, int]
-    unknown: bool
-
-    @property
-    def badges(self) -> dict[str, str]:
-        names = [name for name in self.counts if name]
-        return {name: BADGES[i % len(BADGES)] for i, name in enumerate(names)}
-
-
-def load_view_from(conn: sqlite3.Connection, requested: str) -> View:
-    counts = agent_counts(conn)
-    project = requested if requested and requested in counts else None
-    events = latest_events(conn) if project is None else latest_events(conn, MAX_EVENTS, project)
-    return View(events, project, counts, unknown=bool(requested) and project is None)
-
-
-def load_view(requested: str) -> View:
-    with db.connect() as conn:
-        return load_view_from(conn, requested)
-
-
 def last_id(conn: sqlite3.Connection) -> int:
     """Identifiant du dernier événement : curseur de départ du flux SSE (`/stream`)."""
     return int(conn.execute(_LAST_ID).fetchone()[0])
@@ -130,44 +97,3 @@ def agents(events: list[Event]) -> list[Event]:
         if event.model:
             models.setdefault(key, event.model)
     return [replace(e, issue=issues.get(k), model=models.get(k)) for k, e in latest.items()]
-
-
-def load_last_id() -> int:
-    with db.connect() as conn:
-        return last_id(conn)
-
-
-def _page(request: Request, status: int, context: dict[str, object]) -> HTMLResponse:
-    response = auth.TEMPLATES.TemplateResponse(
-        request, "activity.html", context, status_code=status
-    )
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@router.get("/activity", response_model=None)
-async def activity_page(request: Request, projet: str = Query("")) -> Response:
-    if not auth.is_authenticated(request):
-        return RedirectResponse("/login", status_code=303)
-    try:
-        cursor = await run_in_threadpool(load_last_id)  # avant la lecture : aucun trou possible
-        view = await run_in_threadpool(load_view, projet)
-    except sqlite3.Error as exc:
-        log.warning("lecture des événements impossible : %s", type(exc).__name__)
-        failed_at = datetime.now(UTC).strftime("%H:%M:%S")
-        error: dict[str, object] = {
-            "error_at": failed_at,
-            "retry_url": "/activity" + (f"?{urlencode({'projet': projet})}" if projet else ""),
-            "events": [],
-            "agents": [],
-            "last_id": None,
-        }
-        return _page(request, 503, error)
-    context: dict[str, object] = {
-        "error_at": None,
-        "view": view,
-        "events": view.events,
-        "agents": agents(view.events),
-        "last_id": cursor,
-    }
-    return _page(request, 200, context)
