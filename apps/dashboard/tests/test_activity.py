@@ -45,6 +45,8 @@ def seed(n: int, **extra: Any) -> None:
             extra.get("agent_id", f"agent-{i % 3}"),
             extra.get("tool_name", "Bash"),
             extra.get("project", "viral-video-agents"),
+            extra.get("issue"),
+            extra.get("model"),
         )
         for i in range(n)
     ]
@@ -184,6 +186,8 @@ def seed_projects(**counts: int) -> None:
             f"{name}-agent-{i}",
             "Bash",
             name.replace("_", "-"),
+            None,
+            None,
         )
         for n, (name, count) in enumerate(counts.items())
         for i in range(count)
@@ -296,6 +300,8 @@ def test_counts_match_the_windows_shown(db_file: Path) -> None:
             f"a-{i}",
             None,
             "autre",
+            None,
+            None,
         )  # noqa: E501
         for i in range(120)
     ]

@@ -142,12 +142,14 @@ def ago(**delta: float) -> str:
     return (datetime.now(UTC) - timedelta(**delta)).isoformat()
 
 
-def seed(*events: tuple[str, str, str, str, str | None]) -> None:
-    """(ts, hook, agent_type, agent_id, tool)."""
-    rows = [
-        (f"e{i}", ts, hook, "sess", agent, agent_id, tool, "viral-video-agents")
-        for i, (ts, hook, agent, agent_id, tool) in enumerate(events)
-    ]
+def seed(*events: tuple[Any, ...]) -> None:
+    """(ts, hook, agent_type, agent_id, tool[, issue[, model]])."""
+    rows = []
+    for i, event in enumerate(events):
+        issue_and_model = (*event[5:], None, None)[:2]
+        rows.append(
+            (f"e{i}", *event[:2], "sess", *event[2:5], "viral-video-agents", *issue_and_model)
+        )
     with db.connect() as conn:
         db.insert_events(conn, rows)
 

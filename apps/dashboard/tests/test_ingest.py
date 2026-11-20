@@ -373,4 +373,66 @@ def test_init_schema_twice_on_old_database_is_idempotent(db_path: Path) -> None:
 
 def test_migration_reraises_other_sqlite_errors(tmp_path: Path) -> None:
     with sqlite3.connect(tmp_path / "vide.db") as conn, pytest.raises(sqlite3.OperationalError):
-        db.add_project_column(conn)  # pas de table events : erreur autre que « duplicate column »
+        db.add_event_columns(conn)  # pas de table events : erreur autre que « duplicate column »
+
+
+# #181 : ticket et modèle optionnels, rétrocompatibles
+def test_event_with_issue_and_model_is_stored(client: TestClient, db_path: Path) -> None:
+    resp = client.post(URL, json=event(issue=42, model="claude-opus-5-5"), headers=auth())
+    assert resp.status_code == 202
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT issue, model FROM events").fetchone()
+    assert row == (42, "claude-opus-5-5")
+
+
+def test_old_event_without_issue_and_model_is_accepted(client: TestClient, db_path: Path) -> None:
+    assert client.post(URL, json=event(), headers=auth()).status_code == 202
+    explicit = event("e2", issue=None, model=None)
+    assert client.post(URL, json=explicit, headers=auth()).status_code == 202
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT issue, model FROM events").fetchall()
+    assert rows == [(None, None), (None, None)]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"issue": 0},
+        {"issue": -1},
+        {"issue": "42"},
+        {"issue": 4.2},
+        {"issue": True},
+        {"issue": 10**9},
+        {"model": 42},
+        {"model": "m" * 129},
+    ],
+)
+def test_invalid_issue_or_model_is_422(client: TestClient, db_path: Path, bad: dict) -> None:
+    assert client.post(URL, json=event(**bad), headers=auth()).status_code == 422
+    assert count_events(db_path) == 0
+
+
+def test_old_database_gets_issue_and_model_columns(client: TestClient, db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(OLD_EVENTS_TABLE)
+    assert client.post(URL, json=event(issue=7, model="m"), headers=auth()).status_code == 202
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT event_id, issue, model FROM events ORDER BY ts").fetchall()
+    assert rows == [("old-1", None, None), ("evt-1", 7, "m")]
+
+
+def test_contract_issue_and_model_bounds() -> None:
+    props = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["properties"]
+    model = ingest.AgentEvent.model_json_schema()["properties"]
+    assert props["issue"]["type"] == ["integer", "null"]
+    assert props["model"]["type"] == ["string", "null"]
+    issue_spec = next(t for t in model["issue"]["anyOf"] if t["type"] == "integer")
+    assert issue_spec["minimum"] == props["issue"]["minimum"] == 1
+    assert issue_spec["maximum"] == props["issue"]["maximum"] == 10**9 - 1
+    model_spec = next(t for t in model["model"]["anyOf"] if t["type"] == "string")
+    assert model_spec["maxLength"] == props["model"]["maxLength"] == 128
+
+
+def test_contract_documents_issue_and_model() -> None:
+    text = (SCHEMA_PATH.parent / "ingest-api.md").read_text(encoding="utf-8")
+    assert "`issue`" in text and "`model`" in text and "#181" in text

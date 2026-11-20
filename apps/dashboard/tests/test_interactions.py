@@ -15,7 +15,7 @@ from dashboard.main import app
 
 PASSWORD = "mot-de-passe-de-test"  # noqa: S105 - valeur factice de test
 TEMPLATES = Path(interactions.__file__).parent / "templates"
-Row = tuple[str, str, str, str, str | None, str | None, str | None, str]
+Row = tuple[str, str, str, str, str | None, str | None, str | None, str, int | None, str | None]
 
 
 @pytest.fixture
@@ -42,9 +42,11 @@ def ev(
     session: str = "sess-1",
     agent_id: str | None = None,
     agent_type: str | None = None,
+    model: str | None = None,
 ) -> Row:
     project = "viral-video-agents"
-    return (eid, f"2026-11-18T{ts}+00:00", name, session, agent_type, agent_id, None, project)
+    stamp = ts if "T" in ts else f"2026-11-18T{ts}+00:00"
+    return (eid, stamp, name, session, agent_type, agent_id, None, project, None, model)
 
 
 def seed(*rows: Row) -> None:

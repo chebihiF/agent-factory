@@ -23,6 +23,7 @@ OptionalName = Annotated[str | None, Field(max_length=128, strict=True)]
 Project = Annotated[
     str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$", strict=True)
 ]
+Issue = Annotated[int | None, Field(ge=1, le=999_999_999, strict=True)]
 DEFAULT_PROJECT = db.DEFAULT_PROJECT
 
 
@@ -39,6 +40,8 @@ class AgentEvent(BaseModel):
     agent_id: OptionalName = None
     tool_name: OptionalName = None
     project: Project = DEFAULT_PROJECT  # absent : ancien événement (#68)
+    issue: Issue = None  # absent : ancien événement (#181)
+    model: OptionalName = None
 
     def row(self) -> db.EventRow:
         values = self.model_dump()
