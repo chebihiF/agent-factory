@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SubagentStart/SubagentStop/PostToolUse : journal JSONL local, source du dashboard (Sprint 1).
+# remplacé par tools/telemetry/hook_emit.py (#180)
 mkdir -p "$CLAUDE_PROJECT_DIR/.claude/telemetry"
 python3 -c '
 import json, sys, time

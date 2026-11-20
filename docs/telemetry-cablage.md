@@ -9,7 +9,7 @@ Objectif : que les événements des agents atteignent le dashboard. Les réglage
 ## 1. Hooks : remplacer `log_event.sh` par `hook_emit.py`
 
 Dans le `.claude/settings.json` local, pour `SubagentStart`, `SubagentStop` et `PostToolUse`,
-remplacer la commande `.claude/hooks/log_event.sh` par :
+remplacer la commande `.claude/hooks/log_event.sh` (chemin local du hook installé, non versionné) par :
 
 ```
 python3 "$CLAUDE_PROJECT_DIR/tools/telemetry/hook_emit.py"
@@ -41,8 +41,9 @@ en `--background` il sort en silence.
 
 Au premier passage, `ship.py` reconnaît l'ancien format, le range dans
 `.claude/telemetry/events.legacy-AAAAMMJJ.jsonl` et ne l'envoie jamais : plus de boucle de rejet
-(`events.jsonl.rejected` cesse de grossir). Pour l'archiver soi-même **hors dépôt**, sessions
-fermées :
+(`events.jsonl.rejected` cesse de grossir). Le `mv` manuel ci-dessous, vers un dossier **hors
+dépôt**, est l'étape **obligatoire** : c'est lui qui garantit que l'ancien journal ne reste
+pas dans le dépôt ni ne soit rejoué. À faire sessions fermées :
 
 ```sh
 mkdir -p ~/.vva/archive
