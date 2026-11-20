@@ -1,7 +1,7 @@
 name: release
 on:
   push:
-    branches: [main]
+    branches: [main, feat/extraction-initiale]  # à retirer quand main existera (déploiement initial)
   workflow_dispatch:  # redéploie main (ex. après set-dashboard-password.sh), sans nouveau merge
 permissions:
   contents: read
