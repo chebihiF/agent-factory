@@ -62,3 +62,4 @@ le backlog (DoR). Choix produit structurant jamais discuté → `blocked` « Att
 - Lire des extraits (`offset/limit`, `grep -n`), pas des fichiers entiers.
 - Les hooks (`hooks/`) lancent ruff à chaque édition et lint + tests à l'arrêt : ne pas les relancer à la main.
 - Contexte long : passation automatique (`tools/agents/bin/handoff.sh`, voir `docs/agents.md`).
+- Enchaînement des tickets, passation à 150 k tokens, archivage des sessions : `rules/session-agents.md`.

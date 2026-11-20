@@ -97,6 +97,7 @@
 - `infra/scripts/test_pool.py` — pool.sh : un ticket = une branche sur un poste libre du pool (#14).
 - `infra/scripts/test_set_dashboard_password.py` — set-dashboard-password.sh (#30) : hash vérifiable, mot de passe jamais écrit ni affiché.
 - `pyproject.toml`
+- `rules/session-agents.md` — Règles de session des agents (enchaînement et passation)
 - `rules/tech-lead.md` — Consignes génériques du tech lead (à recopier dans le fichier de consignes local du projet
 - `skills/deploy-check/SKILL.md` — deploy-check
 - `skills/sprint/SKILL.md` — sprint
@@ -106,6 +107,7 @@
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
+- `tools/agents/tests/test_session_rules.py` — Règle de session des agents (#178) : contenu, bornes et référence par le tech lead.
 - `tools/agents/tests/test_token_report.py` — Mesure des tokens par ticket et routage des modèles (#19).
 - `tools/agents/token_report.py` — Tokens par ticket, agent et modèle ; routage des modèles (#19). Voir docs/agents.md.
 - `tools/telemetry/README.md` — Télémétrie des agents (émetteur Mac, #4)
