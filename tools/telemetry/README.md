@@ -6,7 +6,7 @@ les hooks appellent ; pas de `datetime.UTC` ni de `zip(strict=)`, testé sous 3.
 - `hook_emit.py` : appelé par les hooks Claude Code, lit le JSON du hook sur stdin et
   ajoute **une ligne** conforme à [`contracts/agent-event.schema.json`](../../contracts/agent-event.schema.json)
   au fichier JSONL. Champs écrits : `event_id` (UUID), `ts` (UTC), `hook_event_name`,
-  `session_id`, `agent_type`, `agent_id`, `tool_name`. **Jamais** de prompt, d'arguments
+  `session_id`, `agent_type`, `agent_id`, `tool_name`, et `project` si `VVA_PROJECT` est valide. **Jamais** de prompt, d'arguments
   ni de sortie d'outil. Toute erreur (ou plus de 0,8 s) : sortie en code 0, sans bruit.
 - `ship.py` : envoie les lignes en attente vers `POST /api/v1/events`
   ([`contracts/ingest-api.md`](../../contracts/ingest-api.md)) par lots de 100 au plus.
@@ -17,6 +17,7 @@ les hooks appellent ; pas de `datetime.UTC` ni de `zip(strict=)`, testé sous 3.
 
 | Variable | Rôle | Défaut |
 |----------|------|--------|
+| `VVA_PROJECT` | projet émetteur (nom de dépôt ; `agent-factory` dans `hooks/settings.example.json`) ; absent ou invalide : champ omis, l'ingestion applique `viral-video-agents` | aucun |
 | `VVA_TELEMETRY_FILE` | fichier JSONL | `$CLAUDE_PROJECT_DIR/.claude/telemetry/events.jsonl` |
 | `VVA_INGEST_URL` | URL complète de l'ingestion : `https`, ou `http` sur localhost/127.0.0.1/::1 seulement | requis pour `ship.py` |
 | `VVA_INGEST_TOKEN` | jeton Bearer (= `INGEST_TOKEN` du VPS) | requis pour `ship.py` |

@@ -301,3 +301,76 @@ def test_indexes_on_ts_and_agent_id(client: TestClient, db_path: Path) -> None:
             for c in conn.execute(f'PRAGMA index_info("{name}")')
         }
     assert {"ts", "agent_id"} <= cols
+
+
+# Scénario (#68) : ancien événement accepté
+def test_event_without_project_is_stored_with_default(client: TestClient, db_path: Path) -> None:
+    assert client.post(URL, json=event(), headers=auth()).status_code == 202
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT project FROM events").fetchone()
+    assert row == ("viral-video-agents",)
+
+
+# Scénario (#68) : nouvel événement stocké avec son projet
+def test_event_with_project_is_stored(client: TestClient, db_path: Path) -> None:
+    resp = client.post(URL, json=event(project="agent-factory"), headers=auth())
+    assert resp.status_code == 202
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT project FROM events").fetchone()
+    assert row == ("agent-factory",)
+
+
+@pytest.mark.parametrize("bad", [None, "", 42, "a" * 101, "a b", "../x", "-x"])
+def test_invalid_project_is_422(client: TestClient, db_path: Path, bad: object) -> None:
+    assert client.post(URL, json=event(project=bad), headers=auth()).status_code == 422
+    assert count_events(db_path) == 0
+
+
+OLD_EVENTS_TABLE = """
+CREATE TABLE events (
+    event_id TEXT PRIMARY KEY, ts TEXT NOT NULL, hook_event_name TEXT NOT NULL,
+    session_id TEXT NOT NULL, agent_type TEXT, agent_id TEXT, tool_name TEXT,
+    received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+INSERT INTO events (event_id, ts, hook_event_name, session_id)
+VALUES ('old-1', '2026-11-17T10:00:00+00:00', 'Stop', 'sess-0');
+"""
+
+
+def test_existing_database_is_migrated(client: TestClient, db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(OLD_EVENTS_TABLE)
+    resp = client.post(URL, json=event(project="agent-factory"), headers=auth())
+    assert resp.status_code == 202
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT event_id, project FROM events ORDER BY ts").fetchall()
+        indexed = {c[2] for c in conn.execute("PRAGMA index_info('idx_events_project')")}
+    assert rows == [("old-1", "viral-video-agents"), ("evt-1", "agent-factory")]
+    assert indexed == {"project"}
+
+
+# Contrat (#68) : défaut et exemples du schéma alignés sur le modèle
+def test_contract_project_default_and_examples() -> None:
+    contract = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    assert contract["properties"]["project"]["default"] == ingest.DEFAULT_PROJECT
+    assert "project" not in contract["required"]
+    examples = contract["examples"]
+    assert {"project" in e for e in examples} == {True, False}
+    for example in examples:
+        ingest.AgentEvent.model_validate_json(json.dumps(example))
+
+
+def test_init_schema_twice_on_old_database_is_idempotent(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(OLD_EVENTS_TABLE)
+        db.init_schema(conn)
+        db.init_schema(conn)  # colonne déjà là (ou ajoutée par un autre processus)
+        columns = [c[1] for c in conn.execute("PRAGMA table_info(events)")]
+        rows = conn.execute("SELECT event_id, project FROM events").fetchall()
+    assert columns.count("project") == 1
+    assert rows == [("old-1", ingest.DEFAULT_PROJECT)]
+
+
+def test_migration_reraises_other_sqlite_errors(tmp_path: Path) -> None:
+    with sqlite3.connect(tmp_path / "vide.db") as conn, pytest.raises(sqlite3.OperationalError):
+        db.add_project_column(conn)  # pas de table events : erreur autre que « duplicate column »

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chebihiF/viral-video-agents/contracts/agents-journal.schema.json",
+  "$id": "https://github.com/chebihiF/agent-factory/contracts/agents-journal.schema.json",
   "title": "AgentsJournalRecord",
   "description": "Une ligne du journal local des agents (~/.vva/agents-journal.jsonl, #19) : rattachement session -> ticket, échecs notés, promotions de modèle. Métadonnées uniquement : aucun prompt, aucun contenu de fichier.",
   "$defs": {

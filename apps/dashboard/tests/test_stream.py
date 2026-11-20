@@ -49,6 +49,7 @@ def seed(n: int, start: int = 0, **extra: Any) -> None:
             extra.get("agent_type", "backend"),
             extra.get("agent_id", "agent-1"),
             extra.get("tool_name", "Bash"),
+            extra.get("project", "viral-video-agents"),
         )
         for i in range(start, start + n)
     ]
@@ -119,6 +120,7 @@ def test_message_has_increasing_id_and_json_payload(client: TestClient) -> None:
         "agent_type": "backend",
         "agent_id": "agent-1",
         "tool_name": "Bash",
+        "project": "viral-video-agents",
     }
 
 
@@ -254,3 +256,10 @@ def test_activity_error_page_has_no_stream(
 
     monkeypatch.setattr("dashboard.activity.latest_events", broken)
     assert "data-stream" not in client.get("/activity").text
+
+
+# #68 : le projet est exposé dans le flux
+def test_payload_exposes_project(client: TestClient) -> None:
+    seed(1, project="agent-factory")
+    [(_, payload)] = parse(read_stream(client, **{"Last-Event-ID": "0"}))
+    assert payload["project"] == "agent-factory"

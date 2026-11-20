@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import sys
 import uuid
@@ -23,6 +24,8 @@ DEFAULT_FILE = Path(".claude") / "telemetry" / "events.jsonl"
 DEADLINE_S = 0.8
 REQUIRED = {"hook_event_name": 64, "session_id": 128}
 OPTIONAL = {"agent_type": 128, "agent_id": 128, "tool_name": 128}
+# Projet émetteur (#68) : VVA_PROJECT valide, sinon champ omis (défaut côté ingestion).
+PROJECT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 
 
 def _bail(_signum: int, _frame: FrameType | None) -> None:
@@ -50,6 +53,9 @@ def build_event(hook: Any) -> dict[str, str | None] | None:
         event[name] = value
     for name, limit in OPTIONAL.items():
         event[name] = _text(hook.get(name), limit)
+    project = os.environ.get("VVA_PROJECT", "")
+    if PROJECT_RE.fullmatch(project):
+        event["project"] = project
     return event
 
 

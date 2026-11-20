@@ -21,10 +21,11 @@ SENSITIVE = "contenu-sensible-XYZ"
 
 
 def run_hook(
-    payload: str, tmp_path: Path, target: Path | None = None
+    payload: str, tmp_path: Path, target: Path | None = None, **extra_env: str
 ) -> tuple[subprocess.CompletedProcess[str], float]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("VVA_")}
     env.pop("CLAUDE_PROJECT_DIR", None)
+    env.update(extra_env)
     if target is not None:
         env["VVA_TELEMETRY_FILE"] = str(target)
     start = time.monotonic()
@@ -220,3 +221,31 @@ def test_large_payload_is_read_entirely(tmp_path: Path) -> None:
     assert proc.returncode == 0
     [line] = lines(target)
     assert line["tool_name"] == "Bash"
+
+
+# #68 : projet émetteur (VVA_PROJECT) ; absent => champ omis, l'ingestion applique le défaut
+def test_project_from_env_is_written(tmp_path: Path) -> None:
+    target = tmp_path / "events.jsonl"
+    run_hook(json.dumps(subagent_start()), tmp_path, target, VVA_PROJECT="agent-factory")
+    [line] = lines(target)
+    assert line["project"] == "agent-factory"
+    assert ingest.AgentEvent.model_validate_json(json.dumps(line)).project == "agent-factory"
+
+
+@pytest.mark.parametrize("value", ["", "a b", "../x", "a" * 101])
+def test_invalid_project_is_omitted(tmp_path: Path, value: str) -> None:
+    target = tmp_path / "events.jsonl"
+    run_hook(json.dumps(subagent_start()), tmp_path, target, VVA_PROJECT=value)
+    [line] = lines(target)
+    assert "project" not in line
+    assert ingest.AgentEvent.model_validate_json(json.dumps(line)).project == "viral-video-agents"
+
+
+# #68 : le gabarit des hooks de A déclare son projet
+def test_settings_template_sets_project() -> None:
+    template = SCHEMA_PATH.parents[1] / "hooks" / "settings.example.json"
+    env = json.loads(template.read_text(encoding="utf-8"))["env"]
+    assert env["VVA_PROJECT"] == "agent-factory"
+    payload = {"event_id": "e", "ts": "2026-11-20T10:00:00+00:00", "hook_event_name": "Stop"}
+    event = payload | {"session_id": "s", "project": env["VVA_PROJECT"]}
+    assert ingest.AgentEvent.model_validate_json(json.dumps(event)).project == "agent-factory"

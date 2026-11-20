@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chebihiF/viral-video-agents/contracts/progress.schema.json",
+  "$id": "https://github.com/chebihiF/agent-factory/contracts/progress.schema.json",
   "title": "Progress",
   "description": "Réponse de GET /api/v1/progress : avancement du projet (GitHub, API publique sans jeton, cache 3 min) et travail des agents (table events). Aucune donnée d'enfant.",
   "type": "object",

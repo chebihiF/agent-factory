@@ -44,6 +44,7 @@ def seed(n: int, **extra: Any) -> None:
             extra.get("agent_type", "backend"),
             extra.get("agent_id", f"agent-{i % 3}"),
             extra.get("tool_name", "Bash"),
+            extra.get("project", "viral-video-agents"),
         )
         for i in range(n)
     ]
@@ -160,3 +161,161 @@ def test_static_tokens_served(client: TestClient) -> None:
     resp = client.get("/static/tokens.css")
     assert resp.status_code == 200
     assert "--color-bg" in resp.text
+
+
+# #68 : chaque événement lu porte son projet (préalable au filtre)
+def test_latest_events_carry_project(db_file: Path) -> None:
+    seed(1, project="agent-factory")
+    with db.connect() as conn:
+        [event] = activity.latest_events(conn)
+    assert event.project == "agent-factory"
+
+
+# #68 : filtre par projet (docs/design/filtre-projet.md, variante A)
+def seed_projects(**counts: int) -> None:
+    """`viral_video_agents=2` : 2 événements (agents distincts) pour ce projet."""
+    rows = [
+        (
+            f"{name}-{i}",
+            f"2026-11-18T10:00:{n * 10 + i:02d}+00:00",
+            "PreToolUse",
+            "sess-1",
+            "qa",
+            f"{name}-agent-{i}",
+            "Bash",
+            name.replace("_", "-"),
+        )
+        for n, (name, count) in enumerate(counts.items())
+        for i in range(count)
+    ]
+    with db.connect() as conn:
+        db.insert_events(conn, rows)
+
+
+def table_of(html: str) -> str:
+    return html.split("<table", 1)[1].split("</table>", 1)[0]
+
+
+# Scénario : nouvel événement filtrable
+def test_filtered_view_shows_only_project_events(client: TestClient) -> None:
+    seed_projects(viral_video_agents=2, agent_factory=1)
+    html = client.get("/activity?projet=agent-factory").text
+    assert feed_ids(html) == ["agent_factory-0"]
+    assert "agent_factory-agent-0" in table_of(html)
+    assert "viral_video_agents-agent" not in html
+    assert "Agents · agent-factory" in html
+    assert '<th scope="col">Projet</th>' not in html
+
+
+def test_all_projects_view_has_project_column(client: TestClient) -> None:
+    seed_projects(viral_video_agents=1, agent_factory=1)
+    html = client.get("/activity").text
+    table = table_of(html)
+    assert '<th scope="col">Projet</th>' in table
+    assert "badge-info" in table and "badge-warn" in table
+    assert len(feed_ids(html)) == 2
+
+
+def test_filter_is_a_native_radio_group_reflecting_the_url(client: TestClient) -> None:
+    seed_projects(viral_video_agents=2, agent_factory=1)
+    html = client.get("/activity?projet=viral-video-agents").text
+    form = html.split('<form aria-label="Filtre par projet"', 1)[1].split("</form>", 1)[0]
+    assert 'method="get" action="/activity"' in form
+    assert "<legend>Projet</legend>" in form
+    radios = re.findall(r'<input type="radio" name="projet" value="([^"]*)"( checked)?', form)
+    assert radios == [("", ""), ("viral-video-agents", " checked"), ("agent-factory", "")]
+    assert re.findall(r'<span class="count" data-count="([^"]*)">(\d+)</span>', form) == [
+        ("", "3"),
+        ("viral-video-agents", "2"),
+        ("agent-factory", "1"),
+    ]
+    assert "<noscript>" in form  # sans JS : bouton d'envoi
+
+
+def test_filter_status_phrase(client: TestClient) -> None:
+    seed_projects(viral_video_agents=2, agent_factory=1)
+    filtered = client.get("/activity?projet=agent-factory").text
+    assert "Affichage : agent-factory · 1 agent<" in filtered
+    assert "Affichage : tous les projets · 3 agents<" in client.get("/activity").text
+
+
+def test_unknown_project_falls_back_to_all(client: TestClient) -> None:
+    seed_projects(viral_video_agents=1, agent_factory=1)
+    html = client.get("/activity?projet=inconnu").text
+    assert len(feed_ids(html)) == 2
+    assert "Projet inconnu : affichage de tous les projets" in html
+    assert "inconnu<" not in html.replace("Projet inconnu", "")
+    assert '<input type="radio" name="projet" value="" checked' in html
+
+
+def test_filtered_empty_state_links_to_all(client: TestClient) -> None:
+    seed_projects(viral_video_agents=1)
+    html = client.get("/activity?projet=agent-factory").text
+    assert "Aucun agent pour agent-factory pour l'instant" in html
+    assert '<a href="/activity">Voir tous les projets</a>' in html
+    assert feed_ids(html) == []
+
+
+def test_error_retry_keeps_project(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(*a: object, **k: object) -> list[activity.Event]:
+        raise sqlite3.OperationalError("x")
+
+    monkeypatch.setattr(activity, "latest_events", broken)
+    html = client.get("/activity?projet=agent-factory").text
+    assert '<a href="/activity?projet=agent-factory">Réessayer</a>' in html
+
+
+def test_live_script_submits_filter_and_keeps_it_on_stream() -> None:
+    script = (TEMPLATES.parent / "static" / "live.js").read_text(encoding="utf-8")
+    assert "form[data-autosubmit]" in script and "requestSubmit" in script
+    assert "ev.project === project" in script  # le flux SSE respecte le filtre
+    assert "innerHTML" not in script
+
+
+# #68 revue : un seul GROUP BY, « Tous » sur la fenêtre affichée, plus de couleurs de pastilles
+def test_counts_use_one_grouped_query(db_file: Path) -> None:
+    seed_projects(viral_video_agents=2, agent_factory=1, autre=1)
+    statements: list[str] = []
+    with db.connect() as conn:
+        conn.set_trace_callback(statements.append)
+        view = activity.load_view_from(conn, "")
+    selects = [s for s in statements if s.lstrip().upper().startswith(("SELECT", "WITH"))]
+    assert len(selects) == 2  # compteurs (un GROUP BY) + événements ; plus de DISTINCT par projet
+    assert sum("GROUP BY" in s for s in selects) == 1
+    assert view.counts == {"": 4, "viral-video-agents": 2, "agent-factory": 1, "autre": 1}
+
+
+def test_counts_match_the_windows_shown(db_file: Path) -> None:
+    rows = [
+        (
+            f"x-{i}",
+            f"2026-11-19T10:{i // 60:02d}:{i % 60:02d}+00:00",
+            "Stop",
+            "s",
+            "qa",
+            f"a-{i}",
+            None,
+            "autre",
+        )  # noqa: E501
+        for i in range(120)
+    ]
+    with db.connect() as conn:
+        db.insert_events(conn, rows)
+        view = activity.load_view_from(conn, "")
+        in_project = activity.agents(activity.latest_events(conn, project="autre"))
+    assert view.counts[""] == len(activity.agents(view.events)) == 100  # fenêtre de la vue « Tous »
+    assert view.counts["autre"] == len(in_project) == 100  # fenêtre de la vue filtrée
+
+
+def test_badges_use_four_distinct_colours(client: TestClient) -> None:
+    seed_projects(viral_video_agents=1, agent_factory=1, autre=1, encore=1)
+    html = client.get("/activity").text
+    used = set(re.findall(r'class="badge (badge-[a-z0-9-]+)"', table_of(html)))
+    assert len(used) == 4
+    css = (TEMPLATES / "activity.html").read_text(encoding="utf-8")
+    assert all(f".{name} {{" in css for name in used)
+
+
+def test_live_script_does_not_submit_on_arrow_keys() -> None:
+    script = (TEMPLATES.parent / "static" / "live.js").read_text(encoding="utf-8")
+    assert "ArrowDown" in script and "Enter" in script  # WCAG 3.2.2 : flèches sans rechargement

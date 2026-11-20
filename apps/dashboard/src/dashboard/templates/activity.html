@@ -29,6 +29,20 @@
     [role="alert"] { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-danger); background: var(--color-danger-bg); color: var(--color-danger); }
     [role="alert"] a, .empty a { color: inherit; font-weight: 600; }
     .empty { text-align: center; padding: var(--space-7) var(--space-4); }
+    fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+    legend { font-size: var(--font-size-label); color: var(--color-text-muted); font-weight: 600; padding: 0; margin-bottom: var(--space-2); }
+    .segment { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); cursor: pointer; }
+    .segment:has(input:checked) { background: var(--color-accent); color: var(--color-on-accent); border-color: var(--color-accent); font-weight: 700; }
+    .segment:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+    .segment input { margin: 0; accent-color: var(--color-on-accent); }
+    .count, .badge { font-family: var(--font-mono); font-size: var(--font-size-small); }
+    .badge { display: inline-block; padding: 0 var(--space-2); border-radius: var(--radius-sm); color: var(--color-text); }
+    .badge-info { background: var(--color-info-bg); }
+    .badge-warn { background: var(--color-warn-bg); }
+    .badge-ok { background: var(--color-ok-bg); }
+    .badge-neutral { background: var(--color-surface-2); }
+    #filter-status { margin: var(--space-2) 0 0; font-size: var(--font-size-small); color: var(--color-text-muted); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
   </style>
 </head>
 <body>
@@ -41,26 +55,47 @@
     {% if error_at %}
     <div role="alert">
       <strong>Erreur :</strong> les données sont indisponibles (tentative à <time>{{ error_at }}</time> UTC).
-      <a href="/activity">Réessayer</a>
+      <a href="{{ retry_url }}">Réessayer</a>
     </div>
-    {% elif not events %}
+    {% elif not view.counts[""] %}
     <section class="panel empty" aria-labelledby="empty-title">
       <h2 id="empty-title">Aucun agent n'a encore travaillé</h2>
       <p class="muted">Lancez un agent sur un ticket : ses événements apparaîtront ici dès sa première action.</p>
     </section>
     {% else %}
+    {% set shown = view.counts[view.project or ""] %}
+    <div>
+      <form aria-label="Filtre par projet" method="get" action="/activity" data-autosubmit>
+        <fieldset>
+          <legend>Projet</legend>
+          <label class="segment"><input type="radio" name="projet" value=""{% if view.project is none %} checked{% endif %}> Tous les projets <span class="count" data-count="">{{ view.counts[""] }}</span></label>
+          {% for name, n in view.counts.items() if name %}
+          <label class="segment"><input type="radio" name="projet" value="{{ name }}"{% if view.project == name %} checked{% endif %}> {{ name }} <span class="count" data-count="{{ name }}">{{ n }}</span></label>
+          {% endfor %}
+          <noscript><button type="submit">Afficher</button></noscript>
+        </fieldset>
+      </form>
+      <p id="filter-status" role="status">{% if view.unknown %}Projet inconnu : affichage de tous les projets. {% endif %}Affichage : {{ view.project or "tous les projets" }} · {{ shown }} agent{{ "s" if shown != 1 }}</p>
+    </div>
+    {% if not events %}
+    <section class="panel empty" aria-labelledby="empty-title">
+      <h2 id="empty-title">Aucun agent pour {{ view.project }} pour l'instant</h2>
+      <p><a href="/activity">Voir tous les projets</a></p>
+    </section>
+    {% else %}
     <div class="layout">
       <section id="agents" class="panel" aria-labelledby="agents-title">
-        <h2 id="agents-title">Agents</h2>
+        <h2 id="agents-title">Agents{% if view.project %} · {{ view.project }}{% endif %}</h2>
         <div class="scroll">
           <table>
             <caption class="sr-only">Dernier événement de chaque agent</caption>
             <thead>
-              <tr><th scope="col">Agent</th><th scope="col">Identifiant</th><th scope="col">Dernier événement</th><th scope="col">Outil</th><th scope="col">Dernière activité</th></tr>
+              <tr>{% if view.project is none %}<th scope="col">Projet</th>{% endif %}<th scope="col">Agent</th><th scope="col">Identifiant</th><th scope="col">Dernier événement</th><th scope="col">Outil</th><th scope="col">Dernière activité</th></tr>
             </thead>
             <tbody>
               {% for a in agents %}
               <tr>
+                {% if view.project is none %}<td><span class="badge {{ view.badges.get(a.project, 'badge-info') }}">{{ a.project }}</span></td>{% endif %}
                 <td>{{ a.agent_type or "—" }}</td>
                 <td><code>{{ a.agent_id or "—" }}</code></td>
                 <td>{{ a.hook_event_name }}</td>
@@ -85,6 +120,7 @@
         </ol>
       </aside>
     </div>
+    {% endif %}
     {% endif %}
   </main>
   <script src="/static/live.js" defer></script>

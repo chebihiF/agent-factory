@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 DEFAULT_DB_PATH = "vva.db"
+DEFAULT_PROJECT = "viral-video-agents"  # projet des événements sans champ `project` (#68)
 EVENT_COLUMNS = (
     "event_id",
     "ts",
@@ -18,6 +19,7 @@ EVENT_COLUMNS = (
     "agent_type",
     "agent_id",
     "tool_name",
+    "project",
 )
 EventRow = tuple[str | None, ...]
 TOKEN_COLUMNS = ("point_id", "ts", "session_id", "agent_id", "model", "type", "count")
@@ -71,6 +73,7 @@ def _insert_sql(table: str, columns: Sequence[str]) -> str:
 
 
 _INSERT = _insert_sql("events", EVENT_COLUMNS)
+_ADD_PROJECT = f"ALTER TABLE events ADD COLUMN project TEXT NOT NULL DEFAULT '{DEFAULT_PROJECT}'"
 _INSERT_TOKENS = _insert_sql("token_usage", TOKEN_COLUMNS)
 
 
@@ -83,9 +86,24 @@ def db_path() -> Path:
     return Path(os.environ.get("VVA_DB_PATH") or DEFAULT_DB_PATH)
 
 
+def add_project_column(conn: sqlite3.Connection) -> None:
+    """Colonne `project` (#68), seule définition : base neuve ou antérieure (lignes : défaut).
+
+    Idempotent : « duplicate column » (déjà là, ou ajoutée par un autre processus) est ignoré.
+    """
+    try:
+        with conn:
+            conn.execute(_ADD_PROJECT)
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc):
+            raise
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_events_project ON events (project)")
+
+
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    add_project_column(conn)
 
 
 def _ensure_schema(conn: sqlite3.Connection, path: Path) -> None:
