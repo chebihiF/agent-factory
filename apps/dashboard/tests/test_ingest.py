@@ -436,3 +436,4 @@ def test_contract_issue_and_model_bounds() -> None:
 def test_contract_documents_issue_and_model() -> None:
     text = (SCHEMA_PATH.parent / "ingest-api.md").read_text(encoding="utf-8")
     assert "`issue`" in text and "`model`" in text and "#181" in text
+    assert "serveur d'abord" in text and "minuscules" in text

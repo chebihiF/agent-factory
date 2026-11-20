@@ -23,10 +23,12 @@ from typing import Any
 DEFAULT_FILE = Path(".claude") / "telemetry" / "events.jsonl"
 DEADLINE_S = 0.8
 REQUIRED = {"hook_event_name": 64, "session_id": 128}
-OPTIONAL = {"agent_type": 128, "agent_id": 128, "tool_name": 128, "model": 128}
+OPTIONAL = {"agent_type": 128, "agent_id": 128, "tool_name": 128}
+MODEL_LIMIT = 128
 # Projet émetteur (#68) : VVA_PROJECT valide, sinon champ omis (défaut côté ingestion).
 PROJECT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 # Ticket (#181) : branche `<type>/<n>-…` (ou `<type>/<n>`), lue dans HEAD sans lancer git.
+# `<type>` en minuscules seulement (feat, fix, chore…) : `Feat/42-x` ne donne pas de ticket.
 BRANCH_RE = re.compile(r"ref: refs/heads/[a-z]+/([1-9][0-9]{0,8})(?:-|$)")
 MAX_GIT_FILE = 4096
 
@@ -92,7 +94,13 @@ def build_event(hook: Any) -> dict[str, str | int | None] | None:
         event[name] = value
     for name, limit in OPTIONAL.items():
         event[name] = _text(hook.get(name), limit)
-    event["issue"] = issue_number(_workdir(hook))
+    # issue et model (#181) : omis si inconnus, comme project, pour qu'un serveur antérieur
+    # (qui refuse tout champ hors schéma) accepte encore les événements sans ces informations.
+    issue, model = issue_number(_workdir(hook)), _text(hook.get("model"), MODEL_LIMIT)
+    if issue is not None:
+        event["issue"] = issue
+    if model is not None:
+        event["model"] = model
     project = os.environ.get("VVA_PROJECT", "")
     if PROJECT_RE.fullmatch(project):
         event["project"] = project

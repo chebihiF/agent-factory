@@ -99,7 +99,9 @@ sous-agents. Un sous-agent = un `agent_id` : premier `SubagentStart` et dernier
 `< 1 s`, `1 h 02 min`), « — » sans `Start` ou sans `Stop` ; état « ○ En cours » /
 « ● Terminé » ; un sous-agent démarré, sans `Stop` ni aucun événement de son `agent_id` depuis
 plus de **30 min** (`activity.SILENT_AFTER`) est « ◌ Terminé sans signal », jamais « En cours » (#181).
-Colonne « Modèle » : dernier `model` connu de ce sous-agent, « — » sinon. États vide (« Aucune interaction pour l'instant ») et erreur
+Un `ts` illisible compte comme absence de signe de vie. Agrégation en SQL (`GROUP BY session_id,
+agent_id`, index `idx_events_session_agent`). Colonne « Modèle » : dernier `model` connu de ce
+sous-agent, « — » sinon (les hooks de sous-agents ne le fournissent pas toujours). États vide (« Aucune interaction pour l'instant ») et erreur
 (`role="alert"`, « Réessayer ») ; `no-store`. Même mise à jour en direct que `/activity`.
 
 ### `GET /stream`

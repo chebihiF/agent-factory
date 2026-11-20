@@ -106,6 +106,10 @@ def add_event_columns(conn: sqlite3.Connection) -> None:
             if "duplicate column name" not in str(exc):
                 raise
     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_project ON events (project)")
+    # agrégation des sous-agents de /interactions (#181)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_events_session_agent ON events (session_id, agent_id, ts)"
+    )
 
 
 def init_schema(conn: sqlite3.Connection) -> None:

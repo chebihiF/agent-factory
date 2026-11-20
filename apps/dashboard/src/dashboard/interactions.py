@@ -19,12 +19,24 @@ _SESSIONS = (
     "SELECT session_id, MIN(ts), MAX(ts), COUNT(*) FROM events "
     "GROUP BY session_id ORDER BY MAX(ts) DESC, MAX(rowid) DESC LIMIT ?"
 )
-# Tous les événements d'agent : Start/Stop apparient, les autres sont des signes de vie (#181).
-_AGENT_EVENTS = (
-    "SELECT session_id, agent_id, agent_type, hook_event_name, ts, model FROM events "
-    "WHERE agent_id IS NOT NULL AND session_id IN ({marks}) ORDER BY ts, rowid"
-)
-AgentRow = tuple[str, str, str | None, str, str, str | None]
+# Un sous-agent par (session, agent_id) ayant un Start ou un Stop : premier Start, dernier Stop,
+# dernier événement quel qu'il soit (signe de vie), derniers type et modèle connus (#181).
+_SUBAGENTS = """
+SELECT session_id, agent_id,
+  (SELECT agent_type FROM events t WHERE t.session_id = e.session_id AND t.agent_id = e.agent_id
+     AND t.agent_type IS NOT NULL ORDER BY t.ts DESC, t.rowid DESC LIMIT 1),
+  MIN(CASE WHEN hook_event_name = ? THEN ts END) AS started_at,
+  MAX(CASE WHEN hook_event_name = ? THEN ts END) AS stopped_at,
+  MAX(ts),
+  (SELECT model FROM events m WHERE m.session_id = e.session_id AND m.agent_id = e.agent_id
+     AND m.model IS NOT NULL ORDER BY m.ts DESC, m.rowid DESC LIMIT 1)
+FROM events e
+WHERE agent_id IS NOT NULL AND session_id IN ({marks})
+GROUP BY session_id, agent_id
+HAVING started_at IS NOT NULL OR stopped_at IS NOT NULL
+ORDER BY MIN(rowid)
+"""
+SubagentRow = tuple[str, str, str | None, str | None, str | None, str, str | None]
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -98,43 +110,19 @@ class Session:
         return _label(self.last_ts)
 
 
-@dataclass
-class _Trace:
-    """Événements d'un agent dans une session, lus dans l'ordre chronologique."""
-
-    agent_type: str | None = None
-    started_at: str | None = None
-    stopped_at: str | None = None
-    last_seen: str | None = None
-    model: str | None = None
-
-    def add(self, agent_type: str | None, name: str, ts: str, model: str | None) -> None:
-        self.agent_type = agent_type or self.agent_type
-        self.model = model or self.model
-        self.last_seen = ts
-        if name == START:
-            self.started_at = self.started_at or ts
-        elif name == STOP:
-            self.stopped_at = ts
-
-    def silent(self, now: datetime) -> bool:
-        seen = _parse(self.last_seen)
-        open_ended = self.started_at is not None and self.stopped_at is None
-        return open_ended and seen is not None and now - seen > activity.SILENT_AFTER
+def _silent(started_at: str | None, stopped_at: str | None, last_seen: str, now: datetime) -> bool:
+    """Démarré, sans Stop ni signe de vie lisible depuis `SILENT_AFTER` : plus « en cours »."""
+    if started_at is None or stopped_at is not None:
+        return False
+    seen = _parse(last_seen)
+    return seen is None or now - seen > activity.SILENT_AFTER
 
 
-def _pair_subagents(rows: list[AgentRow], now: datetime) -> dict[str, list[Subagent]]:
-    """Apparie Start/Stop par (session, agent_id) : premier Start, dernier Stop."""
-    traces: dict[tuple[str, str], _Trace] = {}
-    for session_id, agent_id, agent_type, name, ts, model in rows:
-        traces.setdefault((session_id, agent_id), _Trace()).add(agent_type, name, ts, model)
+def _subagents(rows: list[SubagentRow], now: datetime) -> dict[str, list[Subagent]]:
     by_session: dict[str, list[Subagent]] = {}
-    for (session_id, agent_id), t in traces.items():
-        if t.started_at is None and t.stopped_at is None:
-            continue  # agent sans Start ni Stop : pas un sous-agent
-        subagent = Subagent(
-            agent_id, t.agent_type, t.started_at, t.stopped_at, t.model, t.silent(now)
-        )
+    for session_id, agent_id, kind, started, stopped, last_seen, model in rows:
+        silent = _silent(started, stopped, last_seen, now)
+        subagent = Subagent(agent_id, kind, started, stopped, model, silent)
         by_session.setdefault(session_id, []).append(subagent)
     return by_session
 
@@ -144,8 +132,8 @@ def load_sessions(conn: sqlite3.Connection, now: datetime) -> list[Session]:
     if not heads:
         return []
     ids = [row[0] for row in heads]
-    query = _AGENT_EVENTS.format(marks=", ".join("?" for _ in ids))  # noqa: S608 - marqueurs
-    paired = _pair_subagents(conn.execute(query, ids).fetchall(), now)
+    query = _SUBAGENTS.format(marks=", ".join("?" for _ in ids))  # noqa: S608 - marqueurs
+    paired = _subagents(conn.execute(query, (START, STOP, *ids)).fetchall(), now)
     return [
         Session(sid, first, last, count, paired.get(sid, [])) for sid, first, last, count in heads
     ]

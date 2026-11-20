@@ -240,3 +240,28 @@ def test_contract_documents_silent_subagents() -> None:
         Path(interactions.__file__).parents[4] / "contracts" / "dashboard-routes.md"
     ).read_text()
     assert "Terminé sans signal" in text and "30 min" in text
+
+
+def test_unreadable_ts_never_keeps_a_subagent_running(db_file: Path) -> None:
+    row = ("x", "pas-une-date", "SubagentStart", "sess-1", "qa", "sub-1", None, "p", None, None)
+    seed(row)
+    with db.connect() as conn:
+        (session,) = interactions.load_sessions(conn, datetime.now(UTC))
+    (subagent,) = session.subagents
+    assert subagent.silent and not subagent.running
+
+
+def test_subagents_are_aggregated_in_sql(db_file: Path) -> None:
+    seed(*sub(1, "10:00:00", "10:00:10"))
+    statements: list[str] = []
+    with db.connect() as conn:
+        conn.set_trace_callback(statements.append)
+        interactions.load_sessions(conn, datetime.now(UTC))
+    agent_query = next(q for q in statements if "agent_id IS NOT NULL" in q)
+    assert "GROUP BY session_id, agent_id" in agent_query
+
+
+def test_index_on_session_and_agent(db_file: Path) -> None:
+    with db.connect() as conn:
+        cols = [c[2] for c in conn.execute("PRAGMA index_info('idx_events_session_agent')")]
+    assert cols[:2] == ["session_id", "agent_id"]

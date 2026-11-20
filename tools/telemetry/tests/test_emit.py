@@ -117,9 +117,7 @@ def test_post_tool_use_has_no_sensitive_content(tmp_path: Path) -> None:
         "agent_type",
         "agent_id",
         "tool_name",
-        "issue",
-        "model",
-    }
+    }  # ni issue ni model : omis quand inconnus (serveur antérieur au #181 : pas de 422)
 
 
 # Contrat : la ligne est conforme à contracts/agent-event.schema.json
@@ -324,11 +322,11 @@ def test_issue_from_real_git_branch(tmp_path: Path) -> None:
 )
 def test_branch_without_number_gives_null_issue(tmp_path: Path, head: str) -> None:
     repo = fake_repo(tmp_path / "repo", head)
-    assert emitted(tmp_path, repo)["issue"] is None
+    assert "issue" not in emitted(tmp_path, repo)
 
 
 def test_no_repository_gives_null_issue(tmp_path: Path) -> None:
-    assert emitted(tmp_path, tmp_path / "absent")["issue"] is None
+    assert "issue" not in emitted(tmp_path, tmp_path / "absent")
 
 
 def test_issue_falls_back_to_project_dir(tmp_path: Path) -> None:
@@ -348,7 +346,7 @@ def test_model_from_hook(tmp_path: Path) -> None:
 @pytest.mark.parametrize("model", [None, "", 42, {"id": SENSITIVE}])
 def test_missing_or_invalid_model_is_null(tmp_path: Path, model: object) -> None:
     line = emitted(tmp_path, tmp_path, model=model)
-    assert line["model"] is None
+    assert "model" not in line
     assert SENSITIVE not in json.dumps(line)
 
 
