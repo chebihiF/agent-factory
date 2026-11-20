@@ -6,7 +6,10 @@ import ast
 import json
 import os
 import plistlib
+import shutil
 import stat
+import subprocess
+import time
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -119,7 +122,7 @@ def test_budget_cumule_et_depassement_bloque_la_suite(tmp_path: Path) -> None:
     fakes = Fakes([issue(7, "P0")], usage=CONFIG.daily_token_budget + 5)
     run_tick(fakes, tmp_path)
     state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
-    assert state == {"day": "2026-11-20", "tokens": 1_005, "tickets": 1}
+    assert state == {"day": "2026-11-20", "tokens": 1_005, "tickets": 1, "last_ticket": 7}
     assert run_tick(fakes, tmp_path) == "budget-exhausted"
     assert len(fakes.sessions) == 1
 
@@ -196,6 +199,57 @@ def test_pool_refuse_sans_session(tmp_path: Path) -> None:
     deps.pool = refused
     assert al.tick(CONFIG, deps, tmp_path, TODAY) == "pool-refused"
     assert fakes.sessions == []
+
+
+def test_ticket_en_echec_reste_pret_non_retente_le_meme_jour(tmp_path: Path) -> None:
+    fakes = Fakes([issue(7, "P0"), issue(9, "P1")], usage=10)
+    assert run_tick(fakes, tmp_path).startswith("ran ticket=7")
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert state["last_ticket"] == 7
+    assert run_tick(fakes, tmp_path).startswith("ran ticket=9")  # 7 sauté, resté « Prêt »
+    assert fakes.pooled == [7, 9]
+
+
+def test_seul_ticket_deja_tente_donne_no_ticket_puis_retente_le_lendemain(tmp_path: Path) -> None:
+    fakes = Fakes([issue(7, "P0")], usage=10)
+    assert run_tick(fakes, tmp_path).startswith("ran ticket=7")
+    assert run_tick(fakes, tmp_path) == "no-ticket"
+    assert run_tick(fakes, tmp_path, date(2026, 11, 21)).startswith("ran ticket=7")
+
+
+def test_etat_sans_dernier_ticket_reste_lisible_et_zero_refuse(tmp_path: Path) -> None:
+    write_state(tmp_path, TODAY, tokens=5, tickets=1)
+    assert al.load_state(tmp_path, TODAY) == al.DayState(TODAY, 5, 1, None)
+    payload = {"day": "2026-11-20", "tokens": 0, "tickets": 0, "last_ticket": 0}
+    (tmp_path / "state.json").write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(al.LoopError, match="state-unreadable"):
+        al.load_state(tmp_path, TODAY)
+
+
+def test_tokens_d_une_session_finie_apres_minuit_comptes_sur_le_nouveau_jour(
+    tmp_path: Path,
+) -> None:
+    lendemain = date(2026, 11, 21)
+    write_state(tmp_path, TODAY, tokens=100, tickets=1)
+    fakes = Fakes([issue(7, "P0")], usage=300)
+    code = al.tick(CONFIG, fakes.deps(), tmp_path, TODAY, clock=lambda: lendemain)
+    assert code == "ran ticket=7 tokens=300"
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert state == {"day": "2026-11-21", "tokens": 300, "tickets": 0}
+
+
+def test_consommation_inconnue_apres_minuit_epuise_le_nouveau_jour(tmp_path: Path) -> None:
+    lendemain = date(2026, 11, 21)
+    fakes = Fakes([issue(7, "P0")], usage=None)
+    al.tick(CONFIG, fakes.deps(), tmp_path, TODAY, clock=lambda: lendemain)
+    assert al.tick(CONFIG, fakes.deps(), tmp_path, lendemain) == "budget-exhausted"
+
+
+def test_session_meme_jour_compte_sur_ce_jour(tmp_path: Path) -> None:
+    fakes = Fakes([issue(7, "P0")], usage=300)
+    al.tick(CONFIG, fakes.deps(), tmp_path, TODAY, clock=lambda: TODAY)
+    state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+    assert state["day"] == "2026-11-20" and state["tokens"] == 300 and state["tickets"] == 1
 
 
 # --- Sélection ----------------------------------------------------------------------------
@@ -302,9 +356,9 @@ def test_controle_serveur_injoignable_illisible(monkeypatch: pytest.MonkeyPatch)
                     "claude-haiku-5-5": {"inputTokens": 1, "outputTokens": 2},
                 }
             },
-            103,
+            73,
         ),
-        ({"usage": {"input_tokens": 1, "output_tokens": 2, "cache_read_input_tokens": 3}}, 6),
+        ({"usage": {"input_tokens": 1, "output_tokens": 2, "cache_read_input_tokens": 3}}, 3),
         ({"usage": {"input_tokens": -1}}, None),
         ({"usage": {"input_tokens": True}}, None),
         ({"modelUsage": {"m": "x"}}, None),
@@ -342,6 +396,68 @@ def test_session_par_defaut_sans_contournement_des_permissions(
     command = al.session_command()
     assert command == ["claude", "-p", "--output-format", "json"]
     assert not any("permission" in part or "dangerously" in part for part in command)
+
+
+def test_delai_depasse_tue_tout_le_groupe_de_processus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = tmp_path / "fake-claude"
+    pidfile = tmp_path / "child.pid"
+    fake.write_text(
+        f"#!/bin/sh\nsleep 60 &\necho $! > {pidfile}\nwait\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("LOOP_SESSION_CMD", str(fake))
+    monkeypatch.setattr(al, "SESSION_TIMEOUT_S", 1)
+    assert al.run_session(tmp_path, "/ticket 7\n") is None
+    child = int(pidfile.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _alive(child):
+        time.sleep(0.05)
+    assert not _alive(child)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    done = subprocess.run(  # noqa: S603
+        ["ps", "-o", "stat=", "-p", str(pid)],  # noqa: S607
+        capture_output=True,
+        text=True,
+    )
+    return bool(done.stdout.strip()) and not done.stdout.strip().startswith("Z")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "claude -p --dangerously-skip-permissions",
+        "claude -p --permission-mode bypassPermissions",
+        "claude -p --permission-mode=bypassPermissions",
+        "claude --allow-dangerously-skip-permissions",
+        "sh -c 'claude --dangerously-skip-permissions'",
+        "claude -p --permission-mode BYPASSPERMISSIONS",
+        "claude 'non fermé",
+    ],
+)
+def test_contournement_des_permissions_refuse_sans_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    monkeypatch.setenv("LOOP_SESSION_CMD", command)
+    with pytest.raises(al.LoopError, match="session-cmd-refused"):
+        al.session_command()
+    fakes = Fakes([issue(7, "P0")])
+    assert run_tick(fakes, tmp_path) == "session-cmd-refused"
+    assert fakes.pooled == [] and fakes.sessions == []
+    assert not (tmp_path / "state.json").exists()
+
+
+def test_autres_modes_de_permission_acceptes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LOOP_SESSION_CMD", "claude -p --permission-mode acceptEdits")
+    assert al.session_command()[-1] == "acceptEdits"
 
 
 def test_session_introuvable_consommation_inconnue(
@@ -446,6 +562,54 @@ def test_plist_heures_planifiees(tmp_path: Path) -> None:
     assert plist["EnvironmentVariables"] == {"PATH": "/usr/bin:/bin"}
     assert plist["Label"] == al.label()
     assert plist["RunAtLoad"] is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("/usr/bin:/bin", "/usr/bin:/bin"),
+        ("/opt/homebrew/bin:.:bin::~/x:/usr/bin", "/opt/homebrew/bin:/usr/bin"),
+        ("/usr/bin:/usr/bin", "/usr/bin"),
+        ("", "/usr/bin:/bin"),
+        (".:relatif", "/usr/bin:/bin"),
+    ],
+)
+def test_path_du_plist_entrees_absolues_seulement(raw: str, expected: str) -> None:
+    assert al.absolute_path(raw) == expected
+
+
+def test_install_ecrit_un_path_absolu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_path = tmp_path / "loop.yml"
+    config_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setenv("VVA_LAUNCH_AGENTS", str(tmp_path / "LaunchAgents"))
+    monkeypatch.setenv("VVA_LOOP_DIR", str(tmp_path / "loop"))
+    monkeypatch.setenv("PATH", ".:/usr/bin:bin")
+    deps = al.Deps(launchctl=FakeLaunchctl())
+    assert al.main(["install", "--config", str(config_path)], deps=deps) == 0
+    plist = plistlib.loads((tmp_path / "LaunchAgents" / f"{al.label()}.plist").read_bytes())
+    assert plist["EnvironmentVariables"]["PATH"] == "/usr/bin"
+
+
+def test_dossier_d_etat_en_700_meme_preexistant(tmp_path: Path) -> None:
+    directory = tmp_path / "loop"
+    directory.mkdir(mode=0o755)
+    directory.chmod(0o755)
+    with al.exclusive(directory) as held:
+        assert held
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make absent")
+@pytest.mark.parametrize(("config", "refused"), [("a'b.yml", True), ("a b.yml", False)])
+def test_make_loop_install_refuse_l_apostrophe(config: str, refused: bool) -> None:
+    done = subprocess.run(  # noqa: S603
+        ["make", "-n", "loop-install", f"CONFIG={config}"],  # noqa: S607
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert (done.returncode != 0) is refused
+    assert ("apostrophe" in done.stdout + done.stderr) is refused
 
 
 class FakeLaunchctl:

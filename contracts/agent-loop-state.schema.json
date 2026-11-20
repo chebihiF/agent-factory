@@ -9,6 +9,7 @@
   "properties": {
     "day": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "date locale des compteurs" },
     "tokens": { "type": "integer", "minimum": 0, "description": "tokens consommés ce jour par les sessions de la boucle ; consommation inconnue = budget du jour" },
-    "tickets": { "type": "integer", "minimum": 0, "description": "sessions lancées ce jour (comptées avant le lancement)" }
+    "tickets": { "type": "integer", "minimum": 0, "description": "sessions lancées ce jour (comptées avant le lancement)" },
+    "last_ticket": { "type": "integer", "minimum": 1, "description": "dernier ticket tenté ce jour ; non retenté avant le lendemain, même s'il reste « Prêt » (optionnel)" }
   }
 }

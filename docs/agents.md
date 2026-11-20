@@ -138,7 +138,7 @@ serveur distant).
 
 ```sh
 cp tools/agents/config/loop.example.yml ~/.vva/loop.yml   # local, jamais commité ; à adapter
-make loop-install            # CONFIG=<fichier> pour un autre chemin ; à relancer si hours change
+make loop-install            # CONFIG=<fichier> (sans apostrophe) pour un autre chemin ; à relancer si hours change
 make loop-uninstall
 tools/agents/bin/agent-loop.sh tick --config ~/.vva/loop.yml   # un tick à la main
 ```
@@ -169,19 +169,24 @@ tools/agents/bin/agent-loop.sh tick --config ~/.vva/loop.yml   # un tick à la m
    dépôt rend le ticket inéligible), tri P0→P3 (sans priorité en dernier) puis numéro. Rien →
    `no-ticket` ; gh en échec, réponse illisible ou liste tronquée (500) → `gh-*`.
 5. Poste du pool (#14, `infra/scripts/pool.sh`, qui relit `stop-agents` et « Prêt ») ; refus →
-   `pool-refused`. Le ticket est compté **avant** la session.
+   `pool-refused`. Le ticket est compté **avant** la session, et noté (`last_ticket`) : un ticket
+   tenté reste inéligible jusqu'au lendemain, même resté « Prêt » après un échec (→ `no-ticket`
+   s'il est le seul).
 6. Session neuve dans le poste : `claude -p --output-format json`, prompt `/ticket <n>` sur stdin
-   (délai max 4 h). Les tokens (`modelUsage`, sinon `usage` : input, output, cache lu et créé)
-   s'ajoutent au compteur ; sortie illisible = consommation inconnue = **budget du jour épuisé**.
-   La sortie de la session n'est jamais conservée. → `ran ticket=<n> tokens=<n|unknown>`.
+   (délai max 4 h ; au délai, tout le groupe de processus de la session est tué). Les tokens
+   (`modelUsage`, sinon `usage` : input, output et cache créé) s'ajoutent au compteur. Le **cache lu
+   est exclu** du total : relu à chaque tour, il gonflerait le budget sans consommation neuve.
+   Sortie illisible = consommation inconnue = **budget du jour épuisé**. Une session finie après
+   minuit compte ses tokens sur le nouveau jour. La sortie n'est jamais conservée.
+   → `ran ticket=<n> tokens=<n|unknown>`.
 
 Le budget est vérifié avant chaque ticket : une session en cours n'est pas interrompue et peut
 dépasser le budget ; la boucle s'arrête alors jusqu'au lendemain.
 
 **Permissions** : la commande par défaut ne contourne aucune permission ; une session sans
 surveillance n'obtient que ce que vos réglages locaux (`.claude/settings*.json`) autorisent.
-Surcharge locale possible : `LOOP_SESSION_CMD`. Tout mode de permission plus large reste une
-décision du propriétaire.
+Surcharge locale possible : `LOOP_SESSION_CMD`, mais `--dangerously-skip-permissions` et
+`--permission-mode bypassPermissions` sont **refusés** (`session-cmd-refused`, aucune session).
 
 | Variable | Rôle | Défaut |
 |---|---|---|
@@ -192,5 +197,5 @@ décision du propriétaire.
 | `VVA_LAUNCH_AGENTS` | dossier du plist | `~/Library/LaunchAgents` |
 
 `make loop-install` rend `tools/agents/launchd/agents-loop.plist.template` (label
-`agent-factory.loop.<dossier du dépôt>`, `PATH` du moment de l'installation, aucun secret), puis
+`agent-factory.loop.<dossier du dépôt>`, `PATH` du moment de l'installation réduit à ses entrées absolues, aucun secret), puis
 `launchctl bootstrap gui/<uid>`. launchd lance un tick manqué (Mac en veille) au réveil.

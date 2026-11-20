@@ -50,6 +50,7 @@ ticket: ## Ticket N sur un poste libre du pool (N=<n>, DRY=1 pour simuler)
 	infra/scripts/pool.sh $(if $(DRY),--dry-run) '$(N)'
 
 loop-install: ## Planifie la boucle autonome (launchd ; CONFIG=~/.vva/loop.yml par défaut)
+	$(if $(findstring ',$(CONFIG)),$(error CONFIG : apostrophe interdite))
 	tools/agents/bin/agent-loop.sh install $(if $(CONFIG),--config '$(CONFIG)')
 
 loop-uninstall: ## Retire la planification de la boucle autonome

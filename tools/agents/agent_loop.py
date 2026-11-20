@@ -17,6 +17,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -46,6 +47,7 @@ READY = "Prêt"
 STOP = "stop-agents"
 PRIORITIES = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 NO_PRIORITY = len(PRIORITIES)
+REQUIRED = frozenset({"day", "tokens", "tickets"})
 KEYS = ("hours", "daily_token_budget", "max_tickets_per_day", "control_url")
 HOUR = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 COUNT = re.compile(r"^[0-9]{1,13}$")
@@ -53,19 +55,18 @@ DEPENDS = re.compile(r"\bd[ée]pend", re.IGNORECASE)
 LOCAL_REF = re.compile(r"(?<![\w/])#(\d+)")
 FOREIGN_REF = re.compile(r"[\w.-]+/[\w.-]+#\d+")
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-MODEL_KEYS = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")
-USAGE_KEYS = (
-    "input_tokens",
-    "output_tokens",
-    "cache_read_input_tokens",
-    "cache_creation_input_tokens",
-)
+# Cache lu exclu du total : relu à chaque tour, il gonflerait le budget sans consommation neuve.
+MODEL_KEYS = ("inputTokens", "outputTokens", "cacheCreationInputTokens")
+USAGE_KEYS = ("input_tokens", "output_tokens", "cache_creation_input_tokens")
 CONTROL_TIMEOUT_S = 5
 MAX_CONTROL_BYTES = 65_536
 GH_TIMEOUT_S = 60
 POOL_TIMEOUT_S = 300
 SESSION_TIMEOUT_S = 4 * 3600
 LAUNCHCTL_TIMEOUT_S = 30
+KILL_WAIT_S = 5
+FORBIDDEN_IN_SESSION = ("dangerously-skip-permissions", "bypasspermissions")
+DEFAULT_PATH = "/usr/bin:/bin"
 
 
 class LoopError(Exception):
@@ -105,6 +106,7 @@ class DayState:
     day: date
     tokens: int
     tickets: int
+    last_ticket: Optional[int] = None  # noqa: UP045 - dernier n tenté ce jour, jamais retenté
 
 
 # --- configuration ----------------------------------------------------------------------
@@ -187,19 +189,28 @@ def load_state(directory: Path, today: date) -> DayState:
         return DayState(today, 0, 0)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict) or set(data) != {"day", "tokens", "tickets"}:
+        if not isinstance(data, dict) or not REQUIRED <= set(data) <= REQUIRED | {"last_ticket"}:
             raise LoopError("state-unreadable")
         day = date.fromisoformat(data["day"])
     except (OSError, ValueError, TypeError) as exc:
         raise LoopError("state-unreadable") from exc
-    state = DayState(day, _int(data["tokens"]), _int(data["tickets"]))
+    last = _int(data["last_ticket"]) if "last_ticket" in data else None
+    if last == 0:
+        raise LoopError("state-unreadable")
+    state = DayState(day, _int(data["tokens"]), _int(data["tickets"]), last)
     if day > today:
         raise LoopError("state-unreadable")
     return state if day == today else DayState(today, 0, 0)
 
 
 def save_state(directory: Path, state: DayState) -> None:
-    payload = {"day": state.day.isoformat(), "tokens": state.tokens, "tickets": state.tickets}
+    payload: dict[str, Any] = {
+        "day": state.day.isoformat(),
+        "tokens": state.tokens,
+        "tickets": state.tickets,
+    }
+    if state.last_ticket is not None:
+        payload["last_ticket"] = state.last_ticket
     tmp = directory / "state.json.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
@@ -210,10 +221,16 @@ def save_state(directory: Path, state: DayState) -> None:
     os.replace(tmp, directory / "state.json")
 
 
+def private_dir(directory: Path) -> None:
+    """Dossier d'état en 700, même s'il existait déjà ou si l'umask l'a élargi."""
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(directory, 0o700)
+
+
 @contextlib.contextmanager
 def exclusive(directory: Path) -> Iterator[bool]:
     """Verrou du tick : faux si un autre tick (ou sa session) tourne encore."""
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    private_dir(directory)
     fd = os.open(directory / "lock", os.O_WRONLY | os.O_CREAT, 0o600)
     try:
         try:
@@ -400,7 +417,14 @@ def ticket_prompt(n: int, branch: str) -> str:
 
 
 def session_command() -> list[str]:
-    return shlex.split(os.environ.get("LOOP_SESSION_CMD") or DEFAULT_SESSION)
+    """Commande de session ; tout contournement des permissions est refusé (échec fermé)."""
+    try:
+        command = shlex.split(os.environ.get("LOOP_SESSION_CMD") or DEFAULT_SESSION)
+    except ValueError as exc:
+        raise LoopError("session-cmd-refused", "guillemets non fermés") from exc
+    if not command or any(f in part.lower() for part in command for f in FORBIDDEN_IN_SESSION):
+        raise LoopError("session-cmd-refused", "contournement des permissions interdit")
+    return command
 
 
 def _sum(usage: Any, keys: Sequence[str]) -> int | None:
@@ -427,21 +451,38 @@ def session_tokens(output: str) -> int | None:
     return _sum(data["usage"], USAGE_KEYS) if "usage" in data else None
 
 
+def _kill_group(proc: subprocess.Popen[str]) -> None:
+    """Tue toute l'arborescence de la session (elle est chef de son groupe)."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.communicate(timeout=KILL_WAIT_S)
+
+
 def run_session(cwd: Path, prompt: str) -> int | None:
     """Session neuve dans le poste, prompt sur stdin ; sa sortie n'est jamais conservée."""
+    command = session_command()
     try:
-        done = subprocess.run(  # noqa: S603 - commande fixée par le parent (LOOP_SESSION_CMD)
-            session_command(),
-            input=prompt,
+        proc = subprocess.Popen(  # noqa: S603 - commande fixée par le parent (LOOP_SESSION_CMD)
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             cwd=cwd,
-            capture_output=True,
             text=True,
-            timeout=SESSION_TIMEOUT_S,
-            check=False,
+            start_new_session=True,
         )
-    except (OSError, ValueError, subprocess.SubprocessError):
+    except (OSError, ValueError):
         return None
-    return session_tokens(done.stdout)
+    try:
+        output, _ = proc.communicate(prompt, timeout=SESSION_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        return None
+    except BaseException:
+        _kill_group(proc)
+        raise
+    return session_tokens(output)
 
 
 def launchctl_cli(args: Sequence[str]) -> int:
@@ -462,6 +503,7 @@ Control = Callable[[str], Optional[ControlState]]  # noqa: UP045
 Pool = Callable[[int], tuple[str, Path]]
 Session = Callable[[Path, str], Optional[int]]  # noqa: UP045
 Launchctl = Callable[[Sequence[str]], int]
+Clock = Callable[[], date]
 
 
 @dataclass
@@ -492,32 +534,49 @@ def _blocked(config: Config, state: DayState, deps: Deps) -> str | None:
     return None
 
 
-def _run(config: Config, deps: Deps, directory: Path, today: date) -> str:
+def _run(
+    config: Config,
+    deps: Deps,
+    directory: Path,
+    today: date,
+    clock: Optional[Clock],  # noqa: UP045
+) -> str:
+    session_command()  # refus des contournements avant tout poste ou compteur
     state = load_state(directory, today)
     blocked = _blocked(config, state, deps)
     if blocked:
         return blocked
-    tickets = candidates(deps.gh(LIST_ARGS))
+    # Un ticket déjà tenté ce jour (échec resté « Prêt ») n'est pas retenté avant le lendemain.
+    tickets = [t for t in candidates(deps.gh(LIST_ARGS)) if t.number != state.last_ticket]
     if not tickets:
         return "no-ticket"
     n = tickets[0].number
     branch, poste = deps.pool(n)
-    state = replace(state, tickets=state.tickets + 1)
+    state = replace(state, tickets=state.tickets + 1, last_ticket=n)
     save_state(directory, state)
     used = deps.session(poste, ticket_prompt(n, branch))
+    end = clock() if clock else today
+    if end > today:  # session finie après minuit : ses tokens comptent sur le nouveau jour
+        state = DayState(end, 0, 0)
     # Consommation inconnue : on la suppose égale au budget (échec fermé jusqu'au lendemain).
     tokens = state.tokens + used if used is not None else config.daily_token_budget
     save_state(directory, replace(state, tokens=max(tokens, state.tokens)))
     return f"ran ticket={n} tokens={'unknown' if used is None else used}"
 
 
-def tick(config: Config, deps: Deps, directory: Path, today: date) -> str:
+def tick(
+    config: Config,
+    deps: Deps,
+    directory: Path,
+    today: date,
+    clock: Optional[Clock] = None,  # noqa: UP045 - date du jour à la fin de la session
+) -> str:
     """Un tick planifié : au plus une session ; renvoie un code d'une ligne, sans contenu."""
     with exclusive(directory) as held:
         if not held:
             return "busy"
         try:
-            return _run(config, deps, directory, today)
+            return _run(config, deps, directory, today, clock)
         except LoopError as exc:
             return exc.code
 
@@ -556,6 +615,12 @@ def render_plist(config: Config, config_path: Path, path_env: str, log: Path) ->
     return text.replace("@CALENDAR@", _calendar(config.hours))
 
 
+def absolute_path(raw: str) -> str:
+    """PATH du plist : entrées absolues seulement (jamais « . » ni chemin relatif)."""
+    entries = [e for e in dict.fromkeys(raw.split(":")) if e.startswith("/")]
+    return ":".join(entries) or DEFAULT_PATH
+
+
 def _plist_path() -> Path:
     agents = os.environ.get("VVA_LAUNCH_AGENTS") or Path.home() / "Library" / "LaunchAgents"
     return Path(agents) / f"{label()}.plist"
@@ -564,8 +629,8 @@ def _plist_path() -> Path:
 def install(config_path: Path, deps: Deps) -> None:
     config = load_config(config_path)
     directory = state_dir()
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    path_env = os.environ.get("PATH") or "/usr/bin:/bin"
+    private_dir(directory)
+    path_env = absolute_path(os.environ.get("PATH", ""))
     plist = render_plist(config, config_path.resolve(), path_env, directory / "loop.log")
     target = _plist_path()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -608,7 +673,7 @@ def _tick_cli(config_path: Path, deps: Deps) -> int:
         print(f"{stamp} {exc.code}")
         print(f"agent-loop : {exc.detail}", file=sys.stderr)
         return 1
-    print(f"{stamp} {tick(config, deps, state_dir(), date.today())}")
+    print(f"{stamp} {tick(config, deps, state_dir(), date.today(), date.today)}")
     return 0
 
 
