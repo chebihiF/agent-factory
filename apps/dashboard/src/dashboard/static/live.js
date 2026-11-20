@@ -2,6 +2,15 @@
 // Le DOM est construit via textContent / DOMParser : aucune donnée n'est injectée comme HTML.
 (function () {
   "use strict";
+  // Filtre par projet (#68) : formulaire GET natif (?projet=, lien partageable) envoyé au changement.
+  var filter = document.querySelector("form[data-autosubmit]");
+  if (filter) filter.addEventListener("change", function () { filter.requestSubmit(); });
+
+  function currentProject() {
+    var checked = document.querySelector('input[name="projet"]:checked');
+    return checked ? checked.value : "";
+  }
+
   var root = document.querySelector("[data-stream]");
   if (!root || !window.EventSource) return;
 
@@ -68,8 +77,23 @@
         if (next && target) target.replaceChildren.apply(target, Array.from(next.childNodes).map(function (n) {
           return document.importNode(n, true);
         }));
+        updateCounts(new DOMParser().parseFromString(html, "text/html"));
       })
       .catch(function () {});
+  }
+
+  function updateCounts(doc) {
+    var counts = document.querySelectorAll("[data-count]");
+    for (var i = 0; i < counts.length; i++) {
+      var key = counts[i].getAttribute("data-count");
+      var fresh = Array.prototype.find.call(doc.querySelectorAll("[data-count]"), function (el) {
+        return el.getAttribute("data-count") === key;
+      });
+      if (fresh) counts[i].textContent = fresh.textContent;
+    }
+    var status = doc.getElementById("filter-status");
+    var shown = document.getElementById("filter-status");
+    if (status && shown) shown.textContent = status.textContent;
   }
 
   function scheduleRefresh() {
@@ -86,8 +110,10 @@
     var ev;
     try { ev = JSON.parse(message.data); } catch (e) { return; }
     var feed = document.querySelector("[data-feed]");
-    if (feed) addToFeed(feed, ev);
-    if (refreshSelector && !document.querySelector(refreshSelector)) {
+    var project = currentProject();
+    var matches = !project || ev.project === project; // autre projet : seuls les compteurs bougent
+    if (feed && matches) addToFeed(feed, ev);
+    if (matches && refreshSelector && !document.querySelector(refreshSelector)) {
       window.location.reload(); // état vide : la page n'a encore ni tableau ni flux à compléter
       return;
     }

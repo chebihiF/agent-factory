@@ -71,9 +71,18 @@ Lit la table `events` (voir `ingest-api.md`) : les **100 derniers** événements
 - flux d'événements (`<ol aria-live="polite">`) : heure (UTC), `agent_type`, `agent_id`,
   `hook_event_name`, `tool_name` ; champ absent affiché « — ».
 
+Filtre par projet (#68, spec `docs/design/filtre-projet.md` de B, variante A) : paramètre
+`?projet=<nom>` (absent ou vide = tous). Formulaire GET natif (radios `name="projet"`, envoyé au
+changement par `live.js`, bouton dans `<noscript>`) : l'URL est partageable et le retour arrière
+fonctionne. Projets proposés : `viral-video-agents`, `agent-factory`, puis ceux présents en base ;
+chaque libellé porte son nombre d'agents. Vue « Tous » : colonne Projet ; vue filtrée : tableau et
+flux du seul projet, titre « Agents · <projet> », vide « Aucun agent pour <projet> pour l'instant »
+(lien « Voir tous les projets »). Projet inconnu : retour à « Tous » avec message `role="status"`.
+Le flux SSE ignore côté client les événements d'un autre projet ; les compteurs restent à jour.
+
 États : vide (« Aucun agent n'a encore travaillé »), erreur (bandeau `role="alert"`,
-« Réessayer »). Réponses en `Cache-Control: no-store`. Temps réel : voir `GET /stream`. Hors périmètre :
-pause, filtres, multi-comptes.
+« Réessayer », qui garde `?projet=`). Réponses en `Cache-Control: no-store`. Temps réel : voir
+`GET /stream`. Hors périmètre : pause (globale), multi-comptes.
 
 ### `GET /interactions`
 
