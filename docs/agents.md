@@ -25,9 +25,15 @@ Chaque ligne de ticket se termine par `· <durée>, CI <part> %[, pauses <durée
   (la carte du Project n'est pas lue). Un ticket avec événements mais sans tokens est listé (`0`).
 - **Pauses** : somme des silences de plus de 30 minutes entre deux événements du ticket (quota
   atteint ou attente humaine : la télémétrie ne les distingue pas).
-- **Attente CI** : somme des durées des exécutions (`startedAt` -> `updatedAt`) des branches
-  `<type>/<n>-…`, rapportée à la durée du ticket (plafonnée à 100 %). Sans source : `CI n/d`.
-  Seuls le numéro de ticket et les durées sont retenus, jamais le nom de branche ni de contenu.
+- **Attente CI** : union des intervalles des exécutions (`startedAt` -> `updatedAt`, CI et
+  release en parallèle comptés une fois) des branches `<type>/<n>-…`, coupée à la période du
+  ticket (premier -> dernier événement), rapportée à sa durée. Sans source : `CI n/d`. Seuls le
+  numéro de ticket et les durées sont retenus, jamais le nom de branche ni de contenu.
+- **Limite connue** : le journal ne mémorise pas le dépôt d'un ticket. `--ci-repo` doit donc
+  être le dépôt des tickets suivis ; si deux dépôts ont des numéros qui se chevauchent, seule la
+  période du ticket écarte les exécutions de l'autre. Les tickets absents du journal sont ignorés.
+- `gh run list` est limité à 200 exécutions : si la liste est pleine, un avertissement sur
+  stderr signale que l'attente CI des tickets anciens peut être sous-estimée.
 
 ```sh
 tools/agents/bin/token-report.sh --db vva.db --ci-repo OWNER/REPO   # `gh run list` (réseau)

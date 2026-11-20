@@ -37,6 +37,7 @@ REASON = re.compile(r"^[\w .:-]{1,64}$")
 TOOL_HOOKS = ("PostToolUse", "PostToolUseFailure")
 GIT_TIMEOUT_S = 1.5
 GH_TIMEOUT_S = 15.0
+CI_LIMIT = 200  # exécutions lues par `gh run list` : au-delà, la liste est tronquée
 PAUSE_GAP_S = 1800  # silence d'un ticket au-delà duquel on parle de pause (quota ou attente)
 REPO = re.compile(r"^[\w.-]{1,100}/[\w.-]{1,100}$")
 
@@ -252,6 +253,8 @@ class Span:
 
     total: float
     pauses: float
+    start: datetime = EPOCH
+    end: datetime = EPOCH
 
 
 def fmt_duration(seconds: float) -> str:
@@ -273,31 +276,53 @@ def spans(rows: Sequence[tuple[Any, ...]], tickets: Tickets) -> dict[int, Span]:
         moments.sort()
         gaps = [(moments[i + 1] - moments[i]).total_seconds() for i in range(len(moments) - 1)]
         result[ticket] = Span(
-            (moments[-1] - moments[0]).total_seconds(), sum(g for g in gaps if g > PAUSE_GAP_S)
+            (moments[-1] - moments[0]).total_seconds(),
+            sum(g for g in gaps if g > PAUSE_GAP_S),
+            moments[0],
+            moments[-1],
         )
     return result
 
 
-def ci_waits(runs: Iterable[Any]) -> dict[int, float]:
+def _union_seconds(intervals: list[tuple[datetime, datetime]]) -> float:
+    """Durée couverte par l'union d'intervalles (CI et release parallèles comptés une fois)."""
+    total, current_end = 0.0, EPOCH
+    for start, end in sorted(intervals):
+        start = max(start, current_end)
+        if end > start:
+            total += (end - start).total_seconds()
+            current_end = end
+    return total
+
+
+def ci_waits(runs: Iterable[Any], durations: dict[int, Span]) -> dict[int, float]:
     """Secondes de CI par ticket, d'après `gh run list --json headBranch,startedAt,updatedAt`.
 
-    Seuls le numéro de ticket (branche `feat/<n>-…`) et les durées sont retenus ; entrées
-    illisibles, branches hors convention et durées négatives sont ignorées.
+    Union des intervalles des exécutions (workflows parallèles comptés une fois), coupée à la
+    période du ticket (`Span`) ; un ticket absent de `durations` (donc du journal) est ignoré.
+    Le journal ne dit pas de quel dépôt vient un numéro : deux dépôts aux numéros qui se
+    chevauchent restent indiscernables, d'où `--ci-repo` = le dépôt des tickets suivis.
+    Seuls le numéro (branche `feat/<n>-…`) et les durées sont retenus ; entrées illisibles,
+    branches hors convention et durées négatives sont ignorées.
     """
-    waits: dict[int, float] = defaultdict(float)
+    found: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
     for run in runs:
         if not isinstance(run, dict):
             continue
         ticket = ticket_of_branch(str(run.get("headBranch")))
         start, end = _ts(str(run.get("startedAt"))), _ts(str(run.get("updatedAt")))
-        if ticket is not None and EPOCH not in (start, end) and end > start:
-            waits[ticket] += (end - start).total_seconds()
-    return dict(waits)
+        span = durations.get(ticket) if ticket is not None else None
+        if span is None or EPOCH in (start, end):
+            continue
+        start, end = max(start, span.start), min(end, span.end)
+        if end > start and ticket is not None:
+            found[ticket].append((start, end))
+    return {ticket: _union_seconds(parts) for ticket, parts in found.items()}
 
 
 def fetch_runs(repo: str) -> list[Any] | None:
     """Exécutions de CI via `gh` (réseau, à la demande). None si `gh` échoue : jamais bloquant."""
-    cmd = ["gh", "run", "list", "-R", repo, "--limit", "200"]
+    cmd = ["gh", "run", "list", "-R", repo, "--limit", str(CI_LIMIT)]
     cmd += ["--json", "headBranch,startedAt,updatedAt"]
     try:
         out = subprocess.run(  # noqa: S603 - gh du poste, dépôt validé par REPO
@@ -439,13 +464,14 @@ def _promotion_line(totals: Totals, records: Sequence[dict[str, Any]], routing: 
 
 
 def report(
-    db: Path, journal: Path, routing: Routing, ci: dict[int, float] | None = None
+    db: Path, journal: Path, routing: Routing, runs: Iterable[Any] | None = None
 ) -> list[str]:
     records = read_records(journal)
     tickets = Tickets(records)
     totals = aggregate(_query(db, USAGE_SQL), tickets)
     attached = len([t for t in totals.tickets if t is not None])
     durations = spans(_query(db, ALL_EVENTS_SQL), tickets)
+    ci = None if runs is None else ci_waits(runs, durations)
     lines = [
         f"Tokens : {_fmt(sum(totals.agents.values()))} sur {attached} tickets"
         f" ({len(totals.sessions)} sessions), compteurs seuls",
@@ -548,15 +574,20 @@ def run(argv: list[str]) -> list[str]:
     return report(args.db, args.journal, load_routing(args.routing), _ci(args))
 
 
-def _ci(args: argparse.Namespace) -> dict[int, float] | None:
-    """Attente CI par ticket, ou None (source absente ou illisible : « CI n/d »)."""
+def _ci(args: argparse.Namespace) -> list[Any] | None:
+    """Exécutions de CI, ou None (source absente ou illisible : « CI n/d »)."""
     if args.ci_repo is not None and not REPO.match(args.ci_repo):
         raise SystemExit(f"token-report : dépôt invalide : {args.ci_repo!r}")
     if args.ci_json is not None:
-        runs = load_runs(args.ci_json)
-    else:
-        runs = fetch_runs(args.ci_repo) if args.ci_repo else None
-    return None if runs is None else ci_waits(runs)
+        return load_runs(args.ci_json)
+    runs = fetch_runs(args.ci_repo) if args.ci_repo else None
+    if runs is not None and len(runs) >= CI_LIMIT:
+        print(
+            f"token-report : {len(runs)} exécutions lues, liste probablement tronquée "
+            "(attente CI sous-estimée pour les tickets anciens)",
+            file=sys.stderr,
+        )
+    return runs
 
 
 def main() -> int:

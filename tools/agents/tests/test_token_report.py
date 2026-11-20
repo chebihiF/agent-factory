@@ -10,6 +10,7 @@ import json
 import sqlite3
 import subprocess
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 
 import jsonschema  # type: ignore[import-untyped]  # pas de stubs (dépendance de dev)
@@ -420,7 +421,103 @@ def test_ci_runs_ignore_malformed_entries_and_other_branches(tmp_path: Path) -> 
         {"headBranch": "feat/9-d"},
         "pas un objet",
     ]
-    assert tr.ci_waits(runs) == {9: 300.0}
+    span = tr.Span(3600, 0, _at("10:00"), _at("11:00"))
+    assert tr.ci_waits(runs, {9: span}) == {9: 300.0}
+
+
+def _at(hm: str) -> datetime:
+    return datetime.fromisoformat(f"2026-11-18T{hm}:00+00:00")
+
+
+def _span(start: str, end: str) -> tr.Span:
+    return tr.Span((_at(end) - _at(start)).total_seconds(), 0, _at(start), _at(end))
+
+
+def _run_at(branch: str, start: str, end: str) -> dict[str, str]:
+    return {
+        "headBranch": branch,
+        "startedAt": f"2026-11-18T{start}:00Z",
+        "updatedAt": f"2026-11-18T{end}:00Z",
+    }
+
+
+def test_overlapping_ci_and_release_runs_are_counted_once() -> None:
+    runs = [_run_at("feat/42-a", "10:20", "10:45"), _run_at("feat/42-a", "10:30", "10:50")]
+    assert tr.ci_waits(runs, {42: _span("10:00", "11:40")}) == {42: 1800.0}
+
+
+def test_overlapping_runs_share_in_report(tmp_path: Path) -> None:
+    db, journal = _duration_db(tmp_path)
+    both = [("feat/42-a", "10:20", "10:45"), ("feat/42-a", "10:30", "10:50")]
+    runs = _runs(tmp_path / "r.json", both)
+    lines = _report(db, journal, "--ci-json", str(runs))
+    assert "CI 30 %" in next(line for line in lines if line.startswith("#42 "))
+
+
+def test_ci_is_cut_to_the_ticket_period() -> None:
+    runs = [
+        _run_at("feat/42-a", "09:00", "10:30"),  # commence avant le ticket
+        _run_at("feat/42-a", "11:30", "13:00"),  # déborde après
+        _run_at("feat/42-b", "12:00", "13:00"),  # entièrement hors période
+    ]
+    assert tr.ci_waits(runs, {42: _span("10:00", "11:40")}) == {42: 2400.0}
+
+
+def test_ci_share_never_exceeds_the_period() -> None:
+    runs = [_run_at("feat/42-a", "08:00", "20:00")]
+    assert tr.ci_waits(runs, {42: _span("10:00", "11:00")}) == {42: 3600.0}
+
+
+def test_ci_of_tickets_absent_from_the_journal_is_ignored() -> None:
+    runs = [_run_at("feat/7-a", "10:00", "10:30")]
+    assert tr.ci_waits(runs, {42: _span("10:00", "11:00")}) == {}
+
+
+def test_same_ticket_number_in_another_period_is_not_attributed() -> None:
+    """Limite documentée : sans dépôt dans le journal, seule la période départage deux dépôts."""
+    runs = [_run_at("feat/42-autre-depot", "15:00", "16:00")]
+    assert tr.ci_waits(runs, {42: _span("10:00", "11:00")}) == {}
+
+
+def test_fetch_runs_returns_the_parsed_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake(cmd: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout='[{"headBranch": "feat/1-a"}]')
+
+    monkeypatch.setattr(subprocess, "run", fake)
+    assert tr.fetch_runs("o/r") == [{"headBranch": "feat/1-a"}]
+    assert calls[0][:5] == ["gh", "run", "list", "-R", "o/r"]
+    assert "--limit" in calls[0] and str(tr.CI_LIMIT) in calls[0]
+
+
+def test_fetch_runs_rejects_non_list_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake(cmd: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"a": 1}')
+
+    monkeypatch.setattr(subprocess, "run", fake)
+    assert tr.fetch_runs("o/r") is None
+
+
+@pytest.mark.parametrize("repo", ["pas un depot", "a/b/c", "o/r; rm -rf", ""])
+def test_invalid_ci_repo_is_refused(tmp_path: Path, repo: str) -> None:
+    db, journal = _duration_db(tmp_path)
+    with pytest.raises(SystemExit, match="dépôt invalide"):
+        _report(db, journal, "--ci-repo", repo)
+
+
+def test_truncated_ci_list_is_signalled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db, journal = _duration_db(tmp_path)
+    full = [_run_at("feat/42-a", "10:20", "10:45")] * tr.CI_LIMIT
+    monkeypatch.setattr(tr, "fetch_runs", lambda _repo: full)
+    _report(db, journal, "--ci-repo", "o/r")
+    assert "tronquée" in capsys.readouterr().err
+    monkeypatch.setattr(tr, "fetch_runs", lambda _repo: full[:-1])
+    _report(db, journal, "--ci-repo", "o/r")
+    assert capsys.readouterr().err == ""
 
 
 def test_gh_failure_gives_no_ci_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
