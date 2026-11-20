@@ -29,7 +29,6 @@ EVENT_WINDOW = 500  # événements lus pour « Qui fait quoi »
 MAX_INACTIVE = 5  # agents au repos montrés (un par rôle)
 MAX_LISTED = 100  # lignes de la liste des tickets (le reste : lien vers les issues GitHub)
 UNKNOWN_EPIC = "Épique hors de la liste lue"
-NO_SPRINT = "Sprint non renseigné"
 TOP_TICKETS = 5
 DAYS = 7
 WARN_PERCENT, DANGER_PERCENT = 70, 90

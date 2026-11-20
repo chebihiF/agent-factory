@@ -39,7 +39,7 @@ QUESTION_RE = re.compile(
 )
 # Épique du ticket : « Epic #72 », « Épique : #2 » (jamais « Parent : #n », qui est un ticket).
 EPIC_RE = re.compile(r"\b(?:epic|épique)\s*:?\s*#(\d+)", re.IGNORECASE)
-SPRINT_LABEL_RE = re.compile(r"^sprint[\s:_-]*(.+)$", re.IGNORECASE)
+SPRINT_LABEL_RE = re.compile(r"^sprint[\s:_-]+(\d+)$", re.IGNORECASE)
 FENCE_RE = re.compile(r"^\s*(```|~~~).*?^\s*\1", re.DOTALL | re.MULTILINE)
 QUESTION_MAX = 200
 NEXT_RE = re.compile(r'<([^>]+)>;\s*rel="next"')
@@ -183,13 +183,11 @@ def _labels(item: dict[str, Any]) -> frozenset[str]:
 def _sprint(item: dict[str, Any], labels: frozenset[str]) -> str | None:
     """Sprint lisible : titre du jalon, sinon label `sprint-N` (« Sprint N ») ; pas le Project."""
     milestone = item.get("milestone")
-    if isinstance(milestone, dict) and (title := _text(milestone.get("title"))):
-        return title.strip() or None
-    for name in sorted(labels):
-        match = SPRINT_LABEL_RE.match(name)
-        if match:
-            return f"Sprint {match.group(1).strip()}"
-    return None
+    title = _text(milestone.get("title")) if isinstance(milestone, dict) else None
+    if title and title.strip():
+        return title.strip()
+    numbers = [int(m.group(1)) for name in labels if (m := SPRINT_LABEL_RE.match(name))]
+    return f"Sprint {min(numbers)}" if numbers else None
 
 
 def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:

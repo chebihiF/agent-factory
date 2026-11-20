@@ -555,7 +555,6 @@ def test_each_ticket_shows_title_status_sprint_and_epic(client: TestClient, gith
     assert "Sprint 3" in plain and "Usine d'agents" in plain
     assert "↗ Revue" in plain and "✓ Livré" in plain and "○ Backlog" in plain
     assert "Idée isolée" in plain
-    assert "Usine d'agents" in plain  # l'épique elle-même n'est pas une ligne
     assert "#182" not in plain  # aucun numéro brut affiché
 
 
@@ -668,3 +667,16 @@ def test_contract_documents_the_ticket_list() -> None:
     contract = CONTRACT.read_text(encoding="utf-8")
     assert "tickets.schema.json" in contract and "Liste des tickets" in contract
     assert "tickets.schema.json" in (ROOT / "contracts" / "README.md").read_text(encoding="utf-8")
+
+
+def test_sprint_labels_are_numeric_sorted_by_number_and_fall_back_when_milestone_is_blank() -> None:
+    def sprint(*labels: str, milestone: dict[str, Any] | None = None) -> str | None:
+        extra = {"milestone": milestone} if milestone is not None else {}
+        issues, _ = github_api.parse_issues([issue(8, "S", *labels, **extra)])
+        return issues[0].sprint
+
+    assert sprint("sprint-10", "sprint-9") == "Sprint 9"  # numérique, pas alphabétique
+    assert sprint("sprints", "sprint-x", "sprint") is None
+    assert sprint("sprints", "sprint:2") == "Sprint 2"
+    assert sprint("sprint-4", milestone={"title": "  "}) == "Sprint 4"
+    assert sprint("sprint-4", milestone={"title": "Sprint 7"}) == "Sprint 7"
