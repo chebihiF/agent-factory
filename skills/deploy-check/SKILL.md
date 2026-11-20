@@ -12,13 +12,21 @@ jusqu'à l'étape 4 : aucune commande sur le serveur, aucun `docker` ni `ssh` à
    --exit-status` (en arrière-plan) ; échec → seulement le log du job en échec
    (`gh run view --job <id> --log-failed`, grep error).
 2. **Versions** : version déployée = `curl -fsS "$DASHBOARD_URL/healthz"` ; version attendue =
-   celle du dernier merge sur `main` (`gh pr list -B main -s merged -L1 --json number,mergeCommit`,
-   dernier tag `v*` ou `<tag>-<sha7>`).
+   celle du dernier merge sur `main` : `git fetch -q origin && git rev-parse origin/main`, ou
+   `gh api repos/{owner}/{repo}/commits/main --jq .sha` (jamais la liste des PR mergées, qui
+   peut être en retard sur `main`) ; version = dernier tag `v*` ou `<tag>-<sha7>`.
 3. **Smoke test** (lecture seule) : `/healthz` répond 200 avec la version attendue ; `curl -fsS
    "$DASHBOARD_URL/"` contient le titre de la page (« Agents Dashboard ») ; services voisins OK.
 4. **KO** (smoke test rouge ou version ≠ dernier merge) :
-   - bug ouvert **automatiquement** (sauf bug ouvert pour la même version) :
-     `gh issue create -l type:bug -l P0 -t "fix(prod): smoke test rouge <version>" -b "<log utile>"` ;
+   - `<version>` doit valider `^[A-Za-z0-9._-]{1,64}$` ; sinon aucun bug n'est créé, le rapport
+     signale une version illisible ;
+   - anti-doublon : `gh issue list -l type:bug -S "<version>"` (ouverts) ; un bug existe → le citer,
+     ne pas en créer un second ;
+   - sinon bug ouvert **automatiquement** :
+     `gh issue create -l type:bug -l P0 -t "fix(prod): smoke test rouge <version>" --body-file <fichier>`.
+     Le fichier est écrit par l'agent (version, code HTTP, lien du run release, étape en échec) ;
+     aucun contenu de `/healthz` ni de log ne passe dans la ligne de commande, et les extraits
+     de log joints au fichier sont filtrés (ni jeton, ni en-tête, ni contenu utilisateur) ;
    - pipeline déjà revenu seul à la dernière version saine (rollback automatique du déploiement) :
      le noter, rien d'autre ;
    - sinon **rollback proposé** vers la dernière version saine (dernier run release vert) par le

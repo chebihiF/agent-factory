@@ -5,12 +5,14 @@ description: Sprint en cours du Project Scrum du dépôt courant — état par c
 # /sprint [status | move <n> <colonne> | run | next]
 
 Project du dépôt : propriétaire `<owner>` et numéro `<num>` dans la surcouche locale. Champs :
-`Status` (Backlog / Prêt / En cours / Revue / Livré) et itération `Sprint` de **7 jours**.
+`Status` (Backlog / Prêt / En cours / Revue / Livré) et itération `Sprint` (durée : champ `duration` de l'itération, en jours).
 Identifiants, lus une fois par appel :
 - projet : `gh project view <num> --owner <owner> --format json --jq .id` ;
 - champs et options : `gh project field-list <num> --owner <owner> --format json` ;
 - cartes : `gh project item-list <num> --owner <owner> --format json -L 200` (carte du ticket
-  `n` : `content.number == n` ; sprint courant : `startDate ≤ aujourd'hui < startDate + 7 jours`).
+  `n` : `content.number == n` ; sprint courant : `startDate ≤ aujourd'hui < startDate + duration`
+  jours). Si la liste compte 200 cartes, elle est peut-être tronquée : le signaler dans le
+  rapport (« liste tronquée à 200 cartes ») au lieu de présenter un état faux.
 
 ## /sprint status (défaut) — scénario « État du sprint »
 Cartes du sprint courant groupées par colonne (`Status`), une ligne par colonne :
@@ -32,9 +34,10 @@ poste du pool. Arrêt sur `stop-agents`, échec répété ou décision qui revie
 1. Itérations : `gh api graphql` sur le champ `Sprint` (`... on ProjectV2IterationField
    { id configuration { iterations { id title startDate duration } } }`). Suivante = première
    dont `startDate` suit le sprint courant.
-2. Absente → la créer (7 jours, début = fin du sprint courant) par la mutation
-   `updateProjectV2Field` (`iterationConfiguration` = itérations existantes + la nouvelle).
-   Refus de l'API → ticket `blocked`, « Attend l'utilisateur : ajouter l'itération dans le Project ».
+2. Absente → ne jamais la créer par l'API (la mutation de configuration du champ remplace
+   toutes les itérations et écraserait les existantes) : ticket `blocked`, ligne
+   « Attend l'utilisateur : ajouter l'itération » dans le ticket et le journal du projet,
+   aucune carte déplacée.
 3. Chaque carte non « Livré » du sprint courant est reportée :
    `gh project item-edit --id <item> --project-id <projet> --field-id <Sprint> --iteration-id <suivante>`.
    Relire : ces cartes portent la nouvelle itération, aucune n'est restée sur l'ancienne.

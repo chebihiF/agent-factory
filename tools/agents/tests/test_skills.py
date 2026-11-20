@@ -62,7 +62,9 @@ CONTRACT = {
         "15 lignes",
         "--single-select-option-id",
         "--iteration-id",
-        "7 jours",
+        "duration",
+        "Attend l'utilisateur : ajouter l'itération",
+        "liste tronquée à 200 cartes",
     ],
     "deploy-check": [
         "/healthz",
@@ -75,7 +77,21 @@ CONTRACT = {
         "P0",
         "15 lignes",
         "aucun secret",
+        "git rev-parse origin/main",
+        "commits/main --jq .sha",
+        "^[A-Za-z0-9._-]{1,64}$",
+        "gh issue list -l type:bug -S",
+        "--body-file",
     ],
+}
+ABSENT = {
+    "sprint": ["updateProjectV2Field", "7 jours"],
+    "deploy-check": ["gh pr list", '-b "', "--body "],
+}
+# Écarts voulus entre la DoD du projet (docs/SCRUM.md) et la checklist générique.
+GENERIC_DOD = {
+    "si le déclencheur ci-dessous s'applique": "si le déclencheur de `docs/SCRUM.md` s'applique",
+    ", aucune donnée d'enfant": " ni donnée personnelle",
 }
 SCENARIOS = {
     "ticket": ["Boucle nominale", "Ticket bloqué", "Échecs répétés"],
@@ -118,6 +134,11 @@ def test_skill_covers_contract(name: str, term: str) -> None:
     assert term in _text(name)
 
 
+@pytest.mark.parametrize(("name", "term"), [(n, t) for n, ts in ABSENT.items() for t in ts])
+def test_skill_avoids_unsafe_pattern(name: str, term: str) -> None:
+    assert term not in _text(name)
+
+
 @pytest.mark.parametrize(("name", "scenario"), [(n, s) for n, ss in SCENARIOS.items() for s in ss])
 def test_gherkin_scenario_is_traced(name: str, scenario: str) -> None:
     assert scenario in _text(name)
@@ -135,6 +156,8 @@ def _dod(text: str) -> list[str]:
 
 def test_checklist_is_the_scrum_definition_of_done() -> None:
     dod = _dod(SCRUM.read_text(encoding="utf-8"))
+    for old, new in GENERIC_DOD.items():
+        dod = [item.replace(old, new) for item in dod]
     items = re.findall(r"^- \[ \] .+$", CHECKLIST.read_text(encoding="utf-8"), re.MULTILINE)
     assert len(dod) >= 5
     assert items == dod
