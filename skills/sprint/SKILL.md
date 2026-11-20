@@ -1,11 +1,45 @@
 ---
 name: sprint
-description: État du sprint en cours du Project Scrum du dépôt courant, enchaînement des tickets Prêt, clôture et ouverture du sprint suivant. Usage /sprint [status|run|close].
+description: Sprint en cours du Project Scrum du dépôt courant — état par colonne, déplacement d'une carte, enchaînement des tickets Prêt, clôture et ouverture du sprint suivant. Usage /sprint [status|move <n> <colonne>|run|next].
 ---
-# /sprint [status|run|close]
+# /sprint [status | move <n> <colonne> | run | next]
 
-Project : celui du dépôt (propriétaire et numéro dans la surcouche locale ; Status : Backlog/Prêt/En cours/Revue/Livré ; itération « Sprint », 1 semaine).
+Project du dépôt : propriétaire `<owner>` et numéro `<num>` dans la surcouche locale. Champs :
+`Status` (Backlog / Prêt / En cours / Revue / Livré) et itération `Sprint` de **7 jours**.
+Identifiants, lus une fois par appel :
+- projet : `gh project view <num> --owner <owner> --format json --jq .id` ;
+- champs et options : `gh project field-list <num> --owner <owner> --format json` ;
+- cartes : `gh project item-list <num> --owner <owner> --format json -L 200` (carte du ticket
+  `n` : `content.number == n` ; sprint courant : `startDate ≤ aujourd'hui < startDate + 7 jours`).
 
-- **status** (défaut) : `gh project item-list <numéro> --owner <propriétaire> --format json -L 100` filtré sur l'itération courante ; affiche un tableau compact n° / titre / priorité / statut, ≤ 15 lignes.
-- **run** : prend les tickets « Prêt » du sprint courant par priorité (P0 → P3). Exécute `/ticket <n>` pour chacun. Deux tickets sans fichier commun peuvent partir en parallèle, chacun dans sa propre session et sur son propre poste du pool. Stoppe sur `stop-agents`, sur un échec répété ou sur une décision qui revient au propriétaire.
-- **close** : tickets non livrés → sprint suivant (champ Sprint) ; résumé ≤ 10 lignes (livré, reporté, tokens si disponibles) posté en commentaire de l'épique active ; demande au `product-owner` de passer en « Prêt » les tickets du sprint suivant qui respectent la DoR.
+## /sprint status (défaut) — scénario « État du sprint »
+Cartes du sprint courant groupées par colonne (`Status`), une ligne par colonne :
+`Colonne (k) : #n titre court [P0]…`, puis `Restant : <cartes non Livré>` et `stop-agents :
+#n…` (labels des cartes). **15 lignes** au plus ; au-delà, « +k » par colonne.
+
+## /sprint move <n> <colonne> — scénario « Déplacement »
+Colonne inconnue → refus, liste des colonnes valides. Sinon
+`gh project item-edit --id <item> --project-id <projet> --field-id <Status> --single-select-option-id <option>`,
+puis relire la carte : la colonne affichée doit être `<colonne>`. Ticket absent du Project →
+`gh project item-add <num> --owner <owner> --url <url de l'issue>` d'abord.
+
+## /sprint run
+Tickets « Prêt » du sprint courant par priorité (P0 → P3) : `/ticket <n>` pour chacun. Deux
+tickets sans fichier commun peuvent partir en parallèle, chacun dans sa session et sur son
+poste du pool. Arrêt sur `stop-agents`, échec répété ou décision qui revient au propriétaire.
+
+## /sprint next (alias : close) — scénario « Sprint suivant »
+1. Itérations : `gh api graphql` sur le champ `Sprint` (`... on ProjectV2IterationField
+   { id configuration { iterations { id title startDate duration } } }`). Suivante = première
+   dont `startDate` suit le sprint courant.
+2. Absente → la créer (7 jours, début = fin du sprint courant) par la mutation
+   `updateProjectV2Field` (`iterationConfiguration` = itérations existantes + la nouvelle).
+   Refus de l'API → ticket `blocked`, « Attend l'utilisateur : ajouter l'itération dans le Project ».
+3. Chaque carte non « Livré » du sprint courant est reportée :
+   `gh project item-edit --id <item> --project-id <projet> --field-id <Sprint> --iteration-id <suivante>`.
+   Relire : ces cartes portent la nouvelle itération, aucune n'est restée sur l'ancienne.
+4. Résumé ≤ 10 lignes (livré, reporté, tokens si disponibles : `token-report.sh`) en commentaire
+   de l'épique active ; rétro dans le journal du projet ; le `product-owner` passe en « Prêt »
+   les tickets du nouveau sprint qui respectent la DoR.
+
+Rapport : **15 lignes** au plus. Aucun secret ni donnée personnelle dans les commentaires.
