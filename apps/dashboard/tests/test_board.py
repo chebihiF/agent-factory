@@ -355,6 +355,28 @@ def test_project_filter_keeps_only_that_project(client: TestClient) -> None:
     assert 'value="agent-factory" checked' in html
 
 
+def ingested(client: TestClient, monkeypatch: pytest.MonkeyPatch, *events: dict[str, Any]) -> None:
+    """Envoie les événements par l'API d'ingestion réelle (POST /api/v1/events)."""
+    monkeypatch.setenv("INGEST_TOKEN", "jeton-factice")  # valeur factice de test
+    headers = {"Authorization": "Bearer jeton-factice"}
+    for event in events:
+        assert client.post("/api/v1/events", json=event, headers=headers).status_code == 202
+
+
+# Scénarios Gherkin (#68) de bout en bout : ancien événement accepté, nouvel événement filtrable
+def test_ingested_events_are_filtered_by_project(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = {"ts": ago_iso(seconds=5), "hook_event_name": "PreToolUse", "session_id": "s"}
+    old = base | {"event_id": "old", "agent_type": "scout", "agent_id": "s1"}  # sans project
+    new = base | {"event_id": "new", "agent_type": "qa", "agent_id": "q1"}
+    ingested(client, monkeypatch, old, new | {"project": "agent-factory"})
+    factory = text(section(client.get("/?projet=agent-factory").text, "agents"))
+    legacy = text(section(client.get("/?projet=viral-video-agents").text, "agents"))
+    assert "Testeur" in factory and "Éclaireur" not in factory
+    assert "Éclaireur" in legacy and "Testeur" not in legacy
+
+
 def test_filtered_project_without_tickets_offers_to_show_all(
     client: TestClient, github: GitHub
 ) -> None:
