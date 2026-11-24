@@ -83,9 +83,21 @@ totaux ne doublent pas. Deux points d'une même série au même intervalle serai
 | 415 | `Content-Type` autre que `application/json` | `{"detail": "..."}` |
 | 503 | `INGEST_TOKEN` non configuré | `{"detail": "..."}` |
 
+## Table `otlp_receipt` (bilan des lots, #184)
+
+Une seule ligne (`id = 1`) : `last_at` (ISO 8601 UTC), `batches`, `accepted`, `rejected` (points de
+tokens retenus et rejetés, cumulés). Alimentée par chaque lot **authentifié et lisible** (200) ; un
+lot refusé (401, 400, 413, 415, 503) n'y figure pas. Aucun contenu du lot n'y est stocké. Sert
+uniquement à expliquer la page `/tokens` vide. Migration additive (`CREATE TABLE IF NOT EXISTS`).
+
 ## Page `/tokens`
 
 Accès : session (303 vers `/login` sinon).
 
 Totaux de tokens (tous types confondus) par agent et par modèle, sur 24 h et 7 jours
 glissants. Ni identifiant de session ni attribut personnel n'y est affiché.
+
+Page vide : elle dit pourquoi d'après `otlp_receipt` (aucun envoi reçu, points tous rejetés, lots
+sans compteur de tokens) et ce qu'il faut vérifier ; la procédure de vérification en production est
+dans [`docs/telemetry-cablage.md`](../docs/telemetry-cablage.md) § 6. Sinon, une ligne « Dernier
+envoi OTLP » donne la date et les cumuls.
