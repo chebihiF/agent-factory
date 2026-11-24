@@ -54,6 +54,16 @@ CREATE TABLE IF NOT EXISTS token_usage (
     received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f000+00:00', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_token_usage_ts ON token_usage (ts);
+-- une seule ligne (id = 1) : bilan des lots OTLP authentifiés et lisibles (#184), pour que
+-- /tokens dise pourquoi elle est vide (rien reçu / tout rejeté / pas de compteur de tokens)
+CREATE TABLE IF NOT EXISTS otlp_receipt (
+    id       INTEGER PRIMARY KEY CHECK (id = 1),
+    last_at  TEXT,
+    batches  INTEGER NOT NULL DEFAULT 0,
+    accepted INTEGER NOT NULL DEFAULT 0,
+    rejected INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO otlp_receipt (id) VALUES (1);
 -- une seule ligne (id = 1) : pause des agents et plafond de tokens sur 24 h (#8)
 CREATE TABLE IF NOT EXISTS controls (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
@@ -154,6 +164,30 @@ def insert_events(conn: sqlite3.Connection, rows: Sequence[EventRow]) -> int:
 def insert_token_usage(conn: sqlite3.Connection, rows: Sequence[TokenRow]) -> int:
     """Insère un lot de façon atomique ; ignore les `point_id` connus. Renvoie le nb inséré."""
     return _insert_many(conn, _INSERT_TOKENS, rows)
+
+
+_UPDATE_RECEIPT = (
+    "UPDATE otlp_receipt SET last_at = ?, batches = batches + 1, "
+    "accepted = accepted + ?, rejected = rejected + ? WHERE id = 1"
+)
+
+
+def insert_token_batch(
+    conn: sqlite3.Connection, rows: Sequence[TokenRow], rejected: int, at: str
+) -> int:
+    """Points de tokens et bilan du lot dans UNE transaction. Renvoie le nb de lignes insérées."""
+    with conn:
+        before = conn.total_changes
+        conn.executemany(_INSERT_TOKENS, rows)
+        inserted = conn.total_changes - before
+        conn.execute(_UPDATE_RECEIPT, (at, len(rows), rejected))
+        return inserted
+
+
+def otlp_receipt(conn: sqlite3.Connection) -> tuple[str | None, int, int, int]:
+    """(dernier lot, nb de lots, points retenus, points rejetés)."""
+    row = conn.execute("SELECT last_at, batches, accepted, rejected FROM otlp_receipt").fetchone()
+    return (row[0], int(row[1]), int(row[2]), int(row[3]))
 
 
 _TOUCH = "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"

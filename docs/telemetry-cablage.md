@@ -69,3 +69,57 @@ python3 tools/telemetry/ship.py; echo $?      # 0 : file vidée ; 2 : variable o
   du propriétaire, aucune action sur la prod par les agents.
 - Appliquer les sections 1 à 3 au `.claude/` local de chaque poste de travail.
 - Vérifier sur le dashboard que les événements du poste apparaissent après un tour d'agent.
+
+## 6. Vérifier les tokens (OTLP) en production (#184)
+
+À faire par le propriétaire (accès prod et jeton). Aucune valeur `OTEL_*` ni jeton ne se copie
+dans un ticket, une PR ou un log : ne coller que les codes HTTP et les lignes de `/tokens`.
+`<dashboard>` = hôte du dashboard ; `VVA_INGEST_TOKEN` est déjà dans l'environnement du poste.
+
+**a. La route répond-elle et le jeton est-il bon ?**
+
+```sh
+curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://<dashboard>/v1/metrics \
+  -H "Authorization: Bearer $VVA_INGEST_TOKEN" -H 'Content-Type: application/json' -d '{}'
+```
+
+Attendu : `200`. `401` : jeton différent de `INGEST_TOKEN` du serveur ; `503` : `INGEST_TOKEN` non posé
+en prod ; `404`/`502` : routage Traefik ou conteneur arrêté.
+
+**b. Une charge de test arrive-t-elle jusqu'à `/tokens` ?** (ajoute 1 token factice « verif-otlp »)
+
+```sh
+NOW=$(python3 -c 'import time; print(time.time_ns())')
+curl -sS -w '\n%{http_code}\n' -X POST https://<dashboard>/v1/metrics \
+  -H "Authorization: Bearer $VVA_INGEST_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"claude_code.token.usage","sum":{"aggregationTemporality":1,"dataPoints":[{"attributes":[{"key":"session.id","value":{"stringValue":"verif-184"}},{"key":"model","value":{"stringValue":"verif-model"}},{"key":"type","value":{"stringValue":"input"}},{"key":"agent.name","value":{"stringValue":"verif-otlp"}}],"startTimeUnixNano":"'"$((NOW-60000000000))"'","timeUnixNano":"'"$NOW"'","asInt":1}]}}]}]}]}'
+```
+
+Attendu : `{}` puis `200`. Sur `https://<dashboard>/tokens` : une ligne `verif-otlp` et une ligne
+`verif-model` à 1 token. Si oui, la chaîne serveur (route, jeton, base, page) est saine.
+
+**Nettoyage de (b), geste du propriétaire.** (b) laisse en base des lignes `verif-otlp` /
+`verif-model` (1 token, visibles 7 jours sur `/tokens`) ; le bilan « Dernier envoi » compte aussi
+les lots de (a) et (b). Pour supprimer les lignes factices, sur le VPS (conteneur du dashboard, base
+`/data/vva.db`), ciblé sur la session factice :
+
+```sh
+docker exec <conteneur vva> python3 -c "import sqlite3; c = sqlite3.connect('/data/vva.db'); \
+print(c.execute(\"DELETE FROM token_usage WHERE session_id = 'verif-184'\").rowcount); c.commit()"
+```
+
+Attendu : `1` (autant de lignes que de (b) exécutés). Le bilan `otlp_receipt` n'est pas réécrit.
+
+**c. Claude Code exporte-t-il vraiment ?** Après (b), noter sur `/tokens` (bas de page) la date
+« Dernier envoi OTLP », le nombre de lots, de points retenus et de points rejetés. Redémarrer Claude Code (les `OTEL_*`
+du `settings.json` local ne sont lus qu'au démarrage), travailler une minute, recharger `/tokens` et
+comparer. Le bilan est cumulé : il se lit en différence avant/après, pas en valeur absolue.
+
+| Après redémarrage | Cause probable | Action |
+|---|---|---|
+| ni la date ni le nombre de lots n'ont bougé | rien n'arrive : `OTEL_*` absentes, mal nommées ou non rechargées côté poste ; ou 401 | revoir le tableau de `tools/telemetry/README.md` ; `docker logs <conteneur vva> 2>&1 \| grep 'POST /v1/metrics'` montre les codes (401 = jeton) |
+| lots et rejetés montent, retenus stable | points rejetés : `session.id`/`model`/`type` absent ou temporalité cumulative | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`, `OTEL_METRICS_INCLUDE_SESSION_ID=true` |
+| lots montent, retenus et rejetés stables | lots sans compteur `claude_code.token.usage` : version de Claude Code ou nom de métrique changé | comparer le nom émis, ouvrir un ticket |
+| retenus montent | source alimentée : les lignes réelles apparaissent sur `/tokens` | rien |
+
+Compte rendu attendu dans #184 : « source alimentée : oui/non » + résultat de (a), (b), (c).

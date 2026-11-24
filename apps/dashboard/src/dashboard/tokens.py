@@ -6,6 +6,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from dashboard import db
+
 MAIN_THREAD_LABEL = "(fil principal)"
 _GROUPS = {"agent": "agent_id", "model": "model"}
 _QUERY = (
@@ -25,6 +27,47 @@ class Total:
 class Report:
     by_agent: list[Total]
     by_model: list[Total]
+
+
+@dataclass(frozen=True)
+class Receipt:
+    """Bilan des lots OTLP reçus depuis la création de la base (#184)."""
+
+    last_at: str | None
+    batches: int
+    accepted: int
+    rejected: int
+
+
+def receipt(conn: sqlite3.Connection) -> Receipt:
+    return Receipt(*db.otlp_receipt(conn))
+
+
+def diagnosis(r: Receipt) -> str | None:
+    """Pourquoi la page est vide et que faire ; None si des points ont été retenus."""
+    if r.batches == 0:
+        return (
+            "Aucun envoi OTLP reçu. Vérifier sur le poste que Claude Code exporte ses métriques "
+            "(CLAUDE_CODE_ENABLE_TELEMETRY=1, OTEL_METRICS_EXPORTER=otlp, "
+            "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/json, "
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=https://<dashboard>/v1/metrics, "
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS=Authorization=Bearer <jeton>), "
+            "puis relancer Claude Code. Un jeton faux ou absent est refusé (401) avant tout "
+            "enregistrement : consulter les journaux du serveur."
+        )
+    if r.accepted:
+        return None
+    if r.rejected:
+        return (
+            f"Des envois sont arrivés mais {r.rejected} points de tokens ont été rejetés "
+            "(session.id, model ou type manquant ou invalide, ou temporalité cumulative). "
+            "Vérifier OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta et "
+            "OTEL_METRICS_INCLUDE_SESSION_ID=true."
+        )
+    return (
+        "Des envois sont arrivés mais sans compteur claude_code.token.usage. "
+        "Vérifier la version de Claude Code et OTEL_METRICS_EXPORTER=otlp."
+    )
 
 
 def _cutoff(now: datetime, delta: timedelta) -> str:
