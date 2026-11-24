@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -150,3 +151,15 @@ def test_receipt_counts_accumulate_and_ignore_failed_requests(client: TestClient
         receipt = tokens.receipt(conn)
     assert (receipt.batches, receipt.accepted, receipt.rejected) == (1, 1, 0)
     assert receipt.last_at is not None
+
+
+def test_points_and_receipt_are_written_in_one_transaction(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = ("p1", "2026-11-24T10:00:00.000000+00:00", "s1", None, "m", "input", 1)
+    monkeypatch.setattr(db, "_UPDATE_RECEIPT", "UPDATE table_inconnue SET x = 1")
+    with db.connect() as conn, pytest.raises(sqlite3.OperationalError):
+        db.insert_token_batch(conn, [row], 0, "2026-11-24T10:00:00.000000+00:00")
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM token_usage").fetchone() == (0,)
+        assert db.otlp_receipt(conn)[1] == 0

@@ -166,14 +166,22 @@ def insert_token_usage(conn: sqlite3.Connection, rows: Sequence[TokenRow]) -> in
     return _insert_many(conn, _INSERT_TOKENS, rows)
 
 
-def record_otlp_receipt(conn: sqlite3.Connection, accepted: int, rejected: int, at: str) -> None:
-    """Ajoute un lot OTLP au bilan (points de tokens retenus et rejetés)."""
+_UPDATE_RECEIPT = (
+    "UPDATE otlp_receipt SET last_at = ?, batches = batches + 1, "
+    "accepted = accepted + ?, rejected = rejected + ? WHERE id = 1"
+)
+
+
+def insert_token_batch(
+    conn: sqlite3.Connection, rows: Sequence[TokenRow], rejected: int, at: str
+) -> int:
+    """Points de tokens et bilan du lot dans UNE transaction. Renvoie le nb de lignes insérées."""
     with conn:
-        conn.execute(
-            "UPDATE otlp_receipt SET last_at = ?, batches = batches + 1, "
-            "accepted = accepted + ?, rejected = rejected + ? WHERE id = 1",
-            (at, accepted, rejected),
-        )
+        before = conn.total_changes
+        conn.executemany(_INSERT_TOKENS, rows)
+        inserted = conn.total_changes - before
+        conn.execute(_UPDATE_RECEIPT, (at, len(rows), rejected))
+        return inserted
 
 
 def otlp_receipt(conn: sqlite3.Connection) -> tuple[str | None, int, int, int]:

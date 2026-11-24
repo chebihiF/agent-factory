@@ -192,10 +192,8 @@ def require_json(request: Request) -> None:
 
 def store_points(points: list[TokenPoint], rejected: int = 0) -> int:
     with db.connect() as conn:
-        inserted = db.insert_token_usage(conn, [p.row() for p in points])
         at = datetime.now(UTC).isoformat(timespec="microseconds")
-        db.record_otlp_receipt(conn, len(points), rejected, at)
-        return inserted
+        return db.insert_token_batch(conn, [p.row() for p in points], rejected, at)
 
 
 router = APIRouter()
