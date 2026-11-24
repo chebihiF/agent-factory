@@ -190,9 +190,12 @@ def require_json(request: Request) -> None:
         raise HTTPException(status_code=415, detail="OTLP/HTTP JSON uniquement")
 
 
-def store_points(points: list[TokenPoint]) -> int:
+def store_points(points: list[TokenPoint], rejected: int = 0) -> int:
     with db.connect() as conn:
-        return db.insert_token_usage(conn, [p.row() for p in points])
+        inserted = db.insert_token_usage(conn, [p.row() for p in points])
+        at = datetime.now(UTC).isoformat(timespec="microseconds")
+        db.record_otlp_receipt(conn, len(points), rejected, at)
+        return inserted
 
 
 router = APIRouter()
@@ -201,7 +204,7 @@ router = APIRouter()
 @router.post("/v1/metrics", dependencies=[Depends(require_token), Depends(require_json)])
 async def export_metrics(request: Request) -> JSONResponse:
     points, rejected = token_points(parse_request(await read_body(request)), time.time_ns())
-    await run_in_threadpool(store_points, points)
+    await run_in_threadpool(store_points, points, rejected)
     if not rejected:
         return JSONResponse(content={})
     partial = {"rejectedDataPoints": rejected, "errorMessage": REJECTED}

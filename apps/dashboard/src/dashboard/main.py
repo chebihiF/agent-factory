@@ -42,7 +42,9 @@ def tokens_page(request: Request) -> Response:
         return RedirectResponse("/login", status_code=303)
     with db.connect() as conn:
         report = tokens.totals(conn, datetime.now(UTC))
-    context = {"version": VERSION, "report": report}
+        last = tokens.receipt(conn)
+    hint = tokens.diagnosis(last)
+    context = {"version": VERSION, "report": report, "receipt": last, "hint": hint}
     return TEMPLATES.TemplateResponse(request, "tokens.html", context)
 
 
