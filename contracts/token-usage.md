@@ -85,8 +85,11 @@ totaux ne doublent pas. Deux points d'une même série au même intervalle serai
 
 ## Table `otlp_receipt` (bilan des lots, #184)
 
-Une seule ligne (`id = 1`) : `last_at` (ISO 8601 UTC), `batches`, `accepted`, `rejected` (points de
-tokens retenus et rejetés, cumulés). Alimentée par chaque lot **authentifié et lisible** (200) ; un
+Une seule ligne (`id = 1`) : `last_at` (ISO 8601 UTC), `batches`, `accepted`, `rejected`.
+C'est un **bilan cumulé depuis la création de la base, pas un état récent** : à lire en différence
+avant/après un essai. `accepted` = points valides reçus (doublons compris, donc pas le nombre de
+lignes de `token_usage`) ; `rejected` = points de tokens rejetés. Écrite dans la même transaction
+que les points. Alimentée par chaque lot **authentifié et lisible** (200, `{}` compris) ; un
 lot refusé (401, 400, 413, 415, 503) n'y figure pas. Aucun contenu du lot n'y est stocké. Sert
 uniquement à expliquer la page `/tokens` vide. Migration additive (`CREATE TABLE IF NOT EXISTS`).
 

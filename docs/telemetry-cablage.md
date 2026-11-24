@@ -98,15 +98,28 @@ curl -sS -w '\n%{http_code}\n' -X POST https://<dashboard>/v1/metrics \
 Attendu : `{}` puis `200`. Sur `https://<dashboard>/tokens` : une ligne `verif-otlp` et une ligne
 `verif-model` à 1 token. Si oui, la chaîne serveur (route, jeton, base, page) est saine.
 
-**c. Claude Code exporte-t-il vraiment ?** Redémarrer Claude Code (les `OTEL_*` du `settings.json`
-local ne sont lus qu'au démarrage), travailler une minute, recharger `/tokens`. Lire le bas de
-page « Dernier envoi OTLP » (ou, page vide, le message d'explication) :
+**Nettoyage de (b), geste du propriétaire.** (b) laisse en base des lignes `verif-otlp` /
+`verif-model` (1 token, visibles 7 jours sur `/tokens`) ; le bilan « Dernier envoi » compte aussi
+les lots de (a) et (b). Pour supprimer les lignes factices, sur le VPS (conteneur du dashboard, base
+`/data/vva.db`), ciblé sur la session factice :
 
-| Constat sur `/tokens` | Cause probable | Action |
+```sh
+docker exec <conteneur vva> python3 -c "import sqlite3; c = sqlite3.connect('/data/vva.db'); \
+print(c.execute(\"DELETE FROM token_usage WHERE session_id = 'verif-184'\").rowcount); c.commit()"
+```
+
+Attendu : `1` (autant de lignes que de (b) exécutés). Le bilan `otlp_receipt` n'est pas réécrit.
+
+**c. Claude Code exporte-t-il vraiment ?** Après (b), noter sur `/tokens` (bas de page) la date
+« Dernier envoi OTLP », `batches`, `points retenus` et `rejetés`. Redémarrer Claude Code (les `OTEL_*`
+du `settings.json` local ne sont lus qu'au démarrage), travailler une minute, recharger `/tokens` et
+comparer. Le bilan est cumulé : il se lit en différence avant/après, pas en valeur absolue.
+
+| Après redémarrage | Cause probable | Action |
 |---|---|---|
-| « Aucun envoi OTLP reçu » alors que (a) et (b) passent | variables `OTEL_*` absentes, mal nommées ou jamais rechargées côté poste ; ou 401 | revoir le tableau de `tools/telemetry/README.md`, redémarrer ; `docker logs <conteneur vva> 2>&1 \| grep 'POST /v1/metrics'` montre les codes (401 = jeton) |
-| « … points de tokens rejetés » | `session.id`/`model`/`type` absent ou temporalité cumulative | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`, `OTEL_METRICS_INCLUDE_SESSION_ID=true` |
-| « … sans compteur `claude_code.token.usage` » | version de Claude Code sans ce compteur, ou nom changé | comparer le nom de métrique émis, ouvrir un ticket |
-| Lots reçus mais aucun point de moins de 7 jours | exportateur arrêté | relancer Claude Code |
+| ni la date ni `batches` n'ont bougé | rien n'arrive : `OTEL_*` absentes, mal nommées ou non rechargées côté poste ; ou 401 | revoir le tableau de `tools/telemetry/README.md` ; `docker logs <conteneur vva> 2>&1 \| grep 'POST /v1/metrics'` montre les codes (401 = jeton) |
+| `batches` monte, `rejetés` monte, `retenus` stable | points rejetés : `session.id`/`model`/`type` absent ou temporalité cumulative | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`, `OTEL_METRICS_INCLUDE_SESSION_ID=true` |
+| `batches` monte, `retenus` et `rejetés` stables | lots sans compteur `claude_code.token.usage` : version de Claude Code ou nom de métrique changé | comparer le nom émis, ouvrir un ticket |
+| `retenus` monte | source alimentée : les lignes réelles apparaissent sur `/tokens` | rien |
 
 Compte rendu attendu dans #184 : « source alimentée : oui/non » + résultat de (a), (b), (c).
