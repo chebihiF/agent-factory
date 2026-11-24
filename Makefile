@@ -1,6 +1,6 @@
 # Cibles silencieuses : n'affichent que les échecs (économie de tokens).
 .SILENT:
-.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall install-agents
+.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall install-agents status telemetry-check
 
 UV := uv run -q
 SH := infra/scripts/quiet.sh
@@ -59,3 +59,9 @@ loop-uninstall: ## Retire la planification de la boucle autonome
 install-agents: ## Installe agents/skills/hooks dans un projet (PROJECT=<chemin> [OVERLAY=<fichier>])
 	test -n "$$PROJECT" || { echo "usage : make install-agents PROJECT=<chemin> [OVERLAY=<fichier>]" >&2; exit 2; }
 	python3 scripts/install_agents.py "$$PROJECT" $${OVERLAY:+--overlay "$$OVERLAY"}
+
+status: ## CR d'agents depuis la dernière lecture (10 lignes max, #61)
+	python3 tools/agents/cr.py status
+
+telemetry-check: ## Les hooks locaux émettent-ils vers l'ingestion ? (--live : envoi réel, LIVE=1)
+	$(UV) python tools/telemetry/check_hooks.py $(if $(LIVE),--live)

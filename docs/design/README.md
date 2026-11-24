@@ -28,3 +28,7 @@ Texte et texte atténué >= 4,5:1 sur bg, surface, surface-2 ; états (ok, warn,
 ## Écrans
 - [Activité des agents](activity.md)
 - [Suivi du projet](progress.md)
+- [Accueil](accueil.md)
+- [Filtre par projet](filtre-projet.md)
+- [Tokens](tokens.md)
+- [Refonte du dashboard (#92)](refonte.md)

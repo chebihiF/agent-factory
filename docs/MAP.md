@@ -62,6 +62,7 @@
 - `contracts/README.md` — contracts
 - `contracts/agent-event.schema.json` — données JSON
 - `contracts/agent-loop-state.schema.json` — données JSON
+- `contracts/agent-report.schema.json` — données JSON
 - `contracts/agents-journal.schema.json` — données JSON
 - `contracts/control-api.md` — Contrôles : pause des agents et plafond de tokens (#8)
 - `contracts/dashboard-routes.md` — Routes du dashboard
@@ -75,10 +76,14 @@
 - `docs/agents-memory.md` — Mémoire des agents — conventions
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
+- `docs/design/accueil.md` — Écran « Accueil » (`/`, ticket #179)
 - `docs/design/activity.md` — Écran « Activité des agents »
 - `docs/design/dashboard-refonte.md` — Refonte du dashboard des agents (ticket #179)
 - `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
+- `docs/design/refonte.md` — Refonte du dashboard — spec (#92, couvre #93 à #99)
+- `docs/design/tokens.md` — Écran « Tokens » (`/tokens`) — spec alignée sur le réel (#129, écarts #118)
+- `docs/examples/hooks-settings.example.json` — données JSON
 - `docs/telemetry-cablage.md` — Câblage de l'ingestion des événements d'agents (#180)
 - `hooks/lint_file.sh` — PostToolUse(Edit|Write) : corrige puis vérifie le fichier Python modifié. Silencieux si OK
 - `hooks/log_event.sh` — remplacé par tools/telemetry/hook_emit.py (#180)
@@ -114,22 +119,29 @@
 - `skills/ticket/checklist.md` — Checklist /ticket — Definition of Done
 - `tools/agents/agent_loop.py` — Boucle autonome planifiée (#18) : un ticket « Prêt » par tick, sous budget de tokens.
 - `tools/agents/bin/agent-loop.sh` — Boucle autonome planifiée (#18). Voir docs/agents.md.
+- `tools/agents/bin/cr.sh` — CR d'agents en base SQLite (#61). Voir docs/agents.md.
 - `tools/agents/bin/handoff.sh` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/bin/token-report.sh` — Tokens par ticket, agent et modèle, ≤ 15 lignes, compteurs seuls (#19). Voir docs/agents.m
 - `tools/agents/config/loop.example.yml` — Boucle autonome planifiée (#18) : copier en ~/.vva/loop.yml (local, jamais commité), puis
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report
+- `tools/agents/cr.py` — CR d'agents en base SQLite : hook `record` et lecture `status` (#61). Voir docs/agents.md.
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/launchd/agents-loop.plist.template` — Boucle autonome planifiée (#18) : rendu par `make loop-install` (agent_loop.py install).
 - `tools/agents/tests/test_agent_loop.py` — Boucle autonome planifiée (#18) : gh, contrôles, pool, session et launchctl sont injectés.
+- `tools/agents/tests/test_cr.py` — CR d'agents en base SQLite et `make status` (#61). Faux secrets construits à l'exécution.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
 - `tools/agents/tests/test_session_rules.py` — Règle de session des agents (#178) : contenu, bornes et référence par le tech lead.
 - `tools/agents/tests/test_skills.py` — Skills versionnés /ticket, /sprint, /deploy-check (#15, #16) : lecture des fichiers seulem
 - `tools/agents/tests/test_token_report.py` — Mesure des tokens par ticket et routage des modèles (#19).
 - `tools/agents/token_report.py` — Tokens par ticket, agent et modèle ; routage des modèles (#19). Voir docs/agents.md.
 - `tools/telemetry/README.md` — Télémétrie des agents (émetteur Mac, #4)
+- `tools/telemetry/check_hooks.py` — make telemetry-check : les hooks locaux émettent-ils vers l'ingestion ? (#170)
+- `tools/telemetry/convert_legacy.py` — Convertisseur ponctuel : ancien events.jsonl -> agent-event, sans doublon (#166).
 - `tools/telemetry/hook_emit.py` — Hook Claude Code : JSON du hook sur stdin -> une ligne JSONL minimale (#4).
 - `tools/telemetry/pretool_gate.py` — Hook Claude Code PreToolUse : bloque les outils tant que les agents sont en pause (#8).
 - `tools/telemetry/ship.py` — Expéditeur : JSONL des hooks -> POST /api/v1/events par lots de 100 au plus (#4).
+- `tools/telemetry/tests/test_check_hooks.py` — make telemetry-check : les hooks locaux émettent-ils vers l'ingestion ? (#170)
+- `tools/telemetry/tests/test_convert_legacy.py` — Convertisseur ponctuel events.jsonl ancien format -> agent-event (#166).
 - `tools/telemetry/tests/test_emit.py` — Émetteur de hooks : stdin JSON -> ligne JSONL minimale (#4).
 - `tools/telemetry/tests/test_gate.py` — Hook PreToolUse pretool_gate.py (#8) : code 2 si pause, échec sûr (cache 5 min).
 - `tools/telemetry/tests/test_py39.py` — Les scripts lancés par les hooks tournent sous le python3 du Mac (3.9) (#59).

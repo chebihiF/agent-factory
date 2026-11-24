@@ -12,3 +12,4 @@ Contrats versionnés entre les agents (hooks, télémétrie) et le dashboard.
 | [`tickets.schema.json`](tickets.schema.json) | Ligne de la liste des tickets du dashboard (titre, statut, sprint, épique, PR) |
 | [`agents-journal.schema.json`](agents-journal.schema.json) | Ligne du journal local des agents (session vers ticket) |
 | [`agent-loop-state.schema.json`](agent-loop-state.schema.json) | Compteurs du jour de la boucle autonome (budget de tokens, tickets) |
+| [`agent-report.schema.json`](agent-report.schema.json) | CR de fin de tâche d'un agent (ticket, agent, date, résumé de 5 lignes, statut), table SQLite locale `agent_reports` (#61) |
