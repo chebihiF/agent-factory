@@ -76,10 +76,13 @@
 - `docs/agents-memory.md` — Mémoire des agents — conventions
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
+- `docs/design/accueil.md` — Écran « Accueil » (`/`, ticket #179)
 - `docs/design/activity.md` — Écran « Activité des agents »
 - `docs/design/dashboard-refonte.md` — Refonte du dashboard des agents (ticket #179)
 - `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
+- `docs/design/refonte.md` — Refonte du dashboard — spec (#92, couvre #93 à #99)
+- `docs/design/tokens.md` — Écran « Tokens » (`/tokens`) — spec alignée sur le réel (#129, écarts #118)
 - `docs/examples/hooks-settings.example.json` — données JSON
 - `docs/telemetry-cablage.md` — Câblage de l'ingestion des événements d'agents (#180)
 - `hooks/lint_file.sh` — PostToolUse(Edit|Write) : corrige puis vérifie le fichier Python modifié. Silencieux si OK
