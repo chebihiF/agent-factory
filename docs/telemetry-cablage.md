@@ -111,15 +111,15 @@ print(c.execute(\"DELETE FROM token_usage WHERE session_id = 'verif-184'\").rowc
 Attendu : `1` (autant de lignes que de (b) exécutés). Le bilan `otlp_receipt` n'est pas réécrit.
 
 **c. Claude Code exporte-t-il vraiment ?** Après (b), noter sur `/tokens` (bas de page) la date
-« Dernier envoi OTLP », `batches`, `points retenus` et `rejetés`. Redémarrer Claude Code (les `OTEL_*`
+« Dernier envoi OTLP », le nombre de lots, de points retenus et de points rejetés. Redémarrer Claude Code (les `OTEL_*`
 du `settings.json` local ne sont lus qu'au démarrage), travailler une minute, recharger `/tokens` et
 comparer. Le bilan est cumulé : il se lit en différence avant/après, pas en valeur absolue.
 
 | Après redémarrage | Cause probable | Action |
 |---|---|---|
-| ni la date ni `batches` n'ont bougé | rien n'arrive : `OTEL_*` absentes, mal nommées ou non rechargées côté poste ; ou 401 | revoir le tableau de `tools/telemetry/README.md` ; `docker logs <conteneur vva> 2>&1 \| grep 'POST /v1/metrics'` montre les codes (401 = jeton) |
-| `batches` monte, `rejetés` monte, `retenus` stable | points rejetés : `session.id`/`model`/`type` absent ou temporalité cumulative | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`, `OTEL_METRICS_INCLUDE_SESSION_ID=true` |
-| `batches` monte, `retenus` et `rejetés` stables | lots sans compteur `claude_code.token.usage` : version de Claude Code ou nom de métrique changé | comparer le nom émis, ouvrir un ticket |
-| `retenus` monte | source alimentée : les lignes réelles apparaissent sur `/tokens` | rien |
+| ni la date ni le nombre de lots n'ont bougé | rien n'arrive : `OTEL_*` absentes, mal nommées ou non rechargées côté poste ; ou 401 | revoir le tableau de `tools/telemetry/README.md` ; `docker logs <conteneur vva> 2>&1 \| grep 'POST /v1/metrics'` montre les codes (401 = jeton) |
+| lots et rejetés montent, retenus stable | points rejetés : `session.id`/`model`/`type` absent ou temporalité cumulative | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`, `OTEL_METRICS_INCLUDE_SESSION_ID=true` |
+| lots montent, retenus et rejetés stables | lots sans compteur `claude_code.token.usage` : version de Claude Code ou nom de métrique changé | comparer le nom émis, ouvrir un ticket |
+| retenus montent | source alimentée : les lignes réelles apparaissent sur `/tokens` | rien |
 
 Compte rendu attendu dans #184 : « source alimentée : oui/non » + résultat de (a), (b), (c).
