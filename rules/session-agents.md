@@ -17,7 +17,8 @@ Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
 
 ## 2. Passation au seuil de contexte
 
-- Seuil : 150000 tokens de contexte (défaut). Configurable : option `--threshold <tokens>` de
+- Seuils : 150000 tokens de contexte (défaut, prochaine frontière de phase) et 250000
+  (relève immédiate). Configurable : option `--threshold <tokens>` de
   `handoff.sh check`, dans la commande du hook (`docs/agents.md`).
 - Au seuil, le tech lead (le hook ne mesure que le fil principal) écrit une
   note de 10 lignes maximum (fait / reste / fichiers clés / pièges), au format validé par

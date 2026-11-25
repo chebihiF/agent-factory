@@ -155,6 +155,43 @@ def test_check_at_threshold_asks_for_the_note_once(
     assert "additionalContext" in capsys.readouterr().out
 
 
+def test_check_constants_follow_token_budget_rule() -> None:
+    assert ho.THRESHOLD == 150_000
+    assert ho.IMMEDIATE_THRESHOLD == 250_000
+
+
+def test_check_between_150k_and_250k_waits_for_phase_boundary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    t = _transcript(tmp_path / "t.jsonl", [_assistant(0, 200_000, 0)])
+    assert _main(["check"], stdin=_hook("s1", t)) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "frontière de phase" in context and "immédiate" not in context
+
+
+def test_check_above_250k_asks_for_immediate_handoff(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    t = _transcript(tmp_path / "t.jsonl", [_assistant(1, 250_000, 0)])
+    assert _main(["check"], stdin=_hook("s1", t)) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "immédiate" in context and "250 000" in context and "handoff.sh post" in context
+    assert "frontière de phase" not in context
+    assert _main(["check"], stdin=_hook("s1", t)) == 0  # une seule fois par niveau
+    assert capsys.readouterr().out == ""
+
+
+def test_check_escalates_from_phase_to_immediate_in_one_session(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    low = _transcript(tmp_path / "low.jsonl", [_assistant(0, 160_000, 0)])
+    high = _transcript(tmp_path / "high.jsonl", [_assistant(0, 260_000, 0)])
+    assert _main(["check"], stdin=_hook("s1", low)) == 0
+    assert "frontière de phase" in capsys.readouterr().out
+    assert _main(["check"], stdin=_hook("s1", high)) == 0
+    assert "immédiate" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     "stdin",
     ["", "pas du json", "[]", '{"session_id": "../x", "transcript_path": "/etc/passwd"}', "{}"],
