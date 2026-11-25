@@ -70,14 +70,14 @@ def cache(gh: FakeGithub, clock: Clock) -> github.GithubCache:
 def test_only_issues_are_read_once_per_ttl(
     cache: github.GithubCache, gh: FakeGithub, clock: Clock
 ) -> None:
-    cache.get()
-    cache.get()
+    cache.read()
+    cache.read()
     assert gh.calls == ["/repos/chebihiF/viral-video-agents/issues?state=all&per_page=100"]
     clock.now += 120
-    cache.get()
+    cache.read()
     assert len(gh.calls) == 1
     clock.now += 61
-    cache.get()
+    cache.read()
     assert len(gh.calls) == 2
 
 
@@ -87,14 +87,14 @@ def test_only_issues_are_read_once_per_ttl(
 def test_failure_keeps_last_data_and_is_not_retried_before_ttl(
     cache: github.GithubCache, gh: FakeGithub, clock: Clock, error: BaseException
 ) -> None:
-    assert cache.get()[1] is None
+    assert cache.read()[1] is None
     gh.error = error
     clock.now += 181
-    snapshot, error_at = cache.get()
+    snapshot, error_at, _ = cache.read()
     assert error_at is not None and len(snapshot.issues) == 1
     count = len(gh.calls)
     clock.now += 100
-    cache.get()
+    cache.read()
     assert len(gh.calls) == count
 
 
@@ -102,34 +102,34 @@ def test_failure_without_data_gives_an_empty_snapshot(
     cache: github.GithubCache, gh: FakeGithub
 ) -> None:
     gh.error = URLError("réseau coupé")
-    snapshot, error_at = cache.get()
+    snapshot, error_at, _ = cache.read()
     assert snapshot == github.Snapshot() and error_at is not None
 
 
 def test_rate_limit_waits_for_reset_and_keeps_last_data(
     cache: github.GithubCache, gh: FakeGithub, clock: Clock
 ) -> None:
-    cache.get()
+    cache.read()
     gh.error = github.RateLimited(until=clock.now + 181 + 1000)
     clock.now += 181
-    snapshot, error_at = cache.get()
+    snapshot, error_at, _ = cache.read()
     assert error_at is not None and len(snapshot.issues) == 1
     count = len(gh.calls)
     clock.now += 900  # TTL dépassé mais réinitialisation GitHub pas encore atteinte
-    cache.get()
+    cache.read()
     assert len(gh.calls) == count
     clock.now += 101
     gh.error = None
-    assert cache.get()[1] is None
+    assert cache.read()[1] is None
     assert len(gh.calls) > count
 
 
 def test_rate_limit_wait_is_capped(cache: github.GithubCache, gh: FakeGithub, clock: Clock) -> None:
     gh.error = github.RateLimited(until=10**9)
-    cache.get()
+    cache.read()
     gh.error = None
     clock.now += github.MAX_RATE_WAIT_S + 1
-    assert cache.get()[1] is None
+    assert cache.read()[1] is None
 
 
 # --- Analyse et statuts -----------------------------------------------------------------------
@@ -323,6 +323,9 @@ class MemoryStore:
         etag, body, _ = self.rows[url]
         self.rows[url] = (etag, body, fetched_at)
 
+    def delete(self, url: str) -> None:
+        self.rows.pop(url, None)
+
 
 def _persisted(store: MemoryStore, at: float = 500.0) -> None:
     body = json.dumps({"link": None, "data": [item(7, "P0")]})
@@ -390,7 +393,9 @@ def test_restart_shows_persisted_list_when_github_is_rate_limited(
         clock=clock,
         wall=clock,
         restore=lambda path: ([item(7, "P0")], persisted_at),
+        spawn=lambda task: task(),
     )
+    cache.read()
     snapshot, error_at, data_at = cache.read()
     assert [i.number for i in snapshot.issues] == [7]
     assert error_at is not None and data_at == persisted_at
@@ -400,7 +405,10 @@ def test_restart_shows_persisted_list_when_github_is_rate_limited(
 
 
 def test_data_time_follows_every_successful_read(gh: FakeGithub, clock: Clock) -> None:
-    cache = github.GithubCache(gh, clock=clock, wall=clock, restore=lambda path: ([], 5.0))
+    cache = github.GithubCache(
+        gh, clock=clock, wall=clock, restore=lambda path: ([], 5.0), spawn=lambda task: task()
+    )
+    cache.read()
     assert cache.read()[2] == clock.now
     gh.error = OSError("réseau")
     clock.now += 181
@@ -425,3 +433,154 @@ def test_db_store_never_raises_on_a_broken_database(
     assert store.load(ISSUES_URL) is None
     store.save(ISSUES_URL, '"e"', "{}", 1.0)
     store.touch(ISSUES_URL, 2.0)
+
+
+# --- QA #186 : bout en bout (HttpJson + SQLite réelle + GithubCache), sans réseau ---------------
+def _stack(clock: Clock) -> github.GithubCache:
+    http = github.HttpJson(github.DbStore(), wall=clock)
+    return github.GithubCache(
+        http,
+        clock=clock,
+        wall=clock,
+        restore=http.peek,
+        discard=http.forget,
+        spawn=lambda task: task(),  # lecture de fond exécutée sur place : test déterministe
+    )
+
+
+def _headers(**pairs: str) -> Message:
+    msg = Message()
+    for key, value in pairs.items():
+        msg[key.replace("_", "-")] = value
+    return msg
+
+
+def test_qa_restart_end_to_end_304_renews_time_and_sends_no_secret(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, clock: Clock
+) -> None:
+    monkeypatch.setenv("VVA_DB_PATH", str(tmp_path / "vva.db"))
+    monkeypatch.setenv("VVA_GITHUB_REPO", "o/r")
+    arabic = "تذكرة ✓ éàç"
+    seen: list[urllib.request.Request] = []
+    monkeypatch.setattr(
+        github, "urlopen", _urlopen_from([FakeResponse([item(7, "P0", title=arabic)])], seen)
+    )
+    assert _stack(clock).read()[0].issues[0].title == arabic  # 1er démarrage, succès persisté
+    # redémarrage : nouveau processus simulé, GitHub répond 304 (aucune donnée neuve)
+    clock.now += 5000
+    seen.clear()
+    monkeypatch.setattr(
+        github,
+        "urlopen",
+        _urlopen_from([HTTPError("u", 304, "Not Modified", Message(), None)], seen),
+    )
+    restarted = _stack(clock)
+    restarted.read()  # rend l'instantané persisté ; la lecture de fond (304) s'exécute ici
+    snapshot, error_at, data_at = restarted.read()
+    assert snapshot.issues[0].title == arabic  # unicode préservé via SQLite
+    assert seen[0].get_header("If-none-match") == '"v1"'
+    assert seen[0].get_header("Authorization") is None
+    assert error_at is None and data_at == clock.now  # « données du » = heure courante
+
+
+def test_qa_restart_end_to_end_403_keeps_list_and_makes_no_request_before_reset(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, clock: Clock
+) -> None:
+    monkeypatch.setenv("VVA_DB_PATH", str(tmp_path / "vva.db"))
+    monkeypatch.setenv("VVA_GITHUB_REPO", "o/r")
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([FakeResponse([item(7, "P0")])], []))
+    first = _stack(clock)
+    first.read()
+    saved_at = clock.now
+    clock.now += 4000
+    reset = int(github.time.time()) + 1800
+    seen: list[urllib.request.Request] = []
+    limited = HTTPError(
+        "u", 403, "rate", _headers(X_RateLimit_Remaining="0", X_RateLimit_Reset=str(reset)), None
+    )
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([limited], seen))
+    cache = _stack(clock)
+    cache.read()  # instantané persisté ; la lecture de fond essuie le 403
+    snapshot, error_at, data_at = cache.read()
+    assert [i.number for i in snapshot.issues] == [7]
+    assert error_at is not None and data_at == saved_at  # dernière heure de succès conservée
+    for _ in range(3):  # double clic / rechargements : aucune requête avant le reset
+        clock.now += 400
+        cache.read()
+    assert len(seen) == 1
+
+
+def test_qa_db_holds_only_public_issue_json_no_token(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, clock: Clock
+) -> None:
+    db_file = tmp_path / "vva.db"
+    monkeypatch.setenv("VVA_DB_PATH", str(db_file))
+    monkeypatch.setenv("VVA_GITHUB_REPO", "o/r")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_SECRETSECRET")
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([FakeResponse([item(1)])], []))
+    _stack(clock).read()
+    assert b"ghp_SECRETSECRET" not in db_file.read_bytes()
+
+
+def test_qa_empty_persisted_list_and_empty_etag_are_safe(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch, clock: Clock
+) -> None:
+    monkeypatch.setenv("VVA_DB_PATH", str(tmp_path / "vva.db"))
+    monkeypatch.setenv("VVA_GITHUB_REPO", "o/r")
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([FakeResponse([])], []))
+    assert _stack(clock).read()[0].issues == ()
+    seen: list[urllib.request.Request] = []
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([OSError("réseau")], seen))
+    restarted = _stack(clock)
+    restarted.read()
+    snapshot, error_at, data_at = restarted.read()
+    assert snapshot.issues == () and error_at is not None and data_at is not None
+
+
+# --- Revue #186 : démarrage non bloquant, instantané incomplet ou illisible ----------------------
+def test_first_read_after_restart_does_not_wait_for_github(gh: FakeGithub, clock: Clock) -> None:
+    tasks: list[Callable[[], None]] = []
+    cache = github.GithubCache(
+        gh, clock=clock, wall=clock, restore=lambda p: ([item(7, "P0")], 5.0), spawn=tasks.append
+    )
+    snapshot, error_at, data_at = cache.read()
+    assert [i.number for i in snapshot.issues] == [7] and (error_at, data_at) == (None, 5.0)
+    assert gh.calls == [] and len(tasks) == 1
+    cache.read()  # lecture de fond en cours : ni seconde lecture ni second thread
+    assert gh.calls == [] and len(tasks) == 1
+    tasks[0]()
+    assert len(gh.calls) == 1 and cache.read()[2] == clock.now
+
+
+def test_peek_refuses_a_snapshot_whose_announced_page_is_missing() -> None:
+    store = MemoryStore()
+    link = '<https://api.github.com/repos/o/r/issues?page=2>; rel="next"'
+    store.rows[ISSUES_URL] = ('"1"', json.dumps({"link": link, "data": [1]}), 10.0)
+    assert github.HttpJson(store=store).peek(PATH) is None
+
+
+def test_unparsable_persisted_snapshot_is_forgotten_for_a_full_request(
+    monkeypatch: pytest.MonkeyPatch, gh: FakeGithub, clock: Clock
+) -> None:
+    store = MemoryStore()
+    url = f"https://api.github.com/repos/{github.DEFAULT_REPO}/issues?state=all&per_page=100"
+    store.rows[url] = (
+        '"old"',
+        json.dumps({"link": None, "data": {"pas": "une liste"}}),
+        1.0,
+    )
+    seen: list[urllib.request.Request] = []
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([FakeResponse([item(1)])], seen))
+    http = github.HttpJson(store=store)
+    cache = github.GithubCache(
+        http,
+        clock=clock,
+        wall=clock,
+        restore=http.peek,
+        discard=http.forget,
+        spawn=lambda task: task(),
+    )
+    snapshot, _, _ = cache.read()
+    assert [i.number for i in snapshot.issues] == [1]
+    assert seen[0].get_header("If-none-match") is None  # requête pleine, pas conditionnelle
+    assert store.rows[url][0] == '"v1"'

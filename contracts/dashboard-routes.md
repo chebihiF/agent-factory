@@ -191,7 +191,11 @@ Il rafraîchit les sessions de `/interactions` en rechargeant la page et en remp
   `fetched_at` = epoch du dernier succès, avancé sur 304). Relue au démarrage : la liste reste affichée
   et la première requête envoie `If-None-Match` (304 gratuit). Base illisible : repli mémoire, sans
   erreur. `Board.github_data_at` (ISO UTC, `None` si jamais lu) et `github_data_hm` (« HH:MM » Europe/Paris) ;
-  le bandeau d'erreur GitHub ajoute « Données du HH:MM ». Jeton GitHub : hors périmètre.
+  le bandeau d'erreur GitHub ajoute « Données du HH:MM » (« JJ/MM HH:MM » si ce n'est pas aujourd'hui).
+  Au démarrage l'instantané persisté est rendu aussitôt, GitHub est lu en arrière-plan ; un instantané
+  incomplet (page `next` manquante) ou illisible est ignoré puis effacé (requête pleine).
+  Pas de purge : une ligne par page et par dépôt déjà suivi (au plus 5 par dépôt), les dépôts
+  abandonnés (`VVA_GITHUB_REPO` changé) restent en base. Jeton GitHub : hors périmètre.
 - **Statuts** : livré = fermé avec `state_reason = completed` (fermé « not planned » : exclu) ; revue =
   PR ouverte dont le corps contient `Closes/Fixes/Resolves #n` (ou le titre `(#n)`) ; en cours = label
   `in-progress` ; prêt = `P0`/`P1` non `blocked` ; backlog = le reste. Exclus : PR, épiques, labels

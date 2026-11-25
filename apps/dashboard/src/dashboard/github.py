@@ -85,21 +85,19 @@ def _next_url(link: str | None) -> str | None:
     return url if url and url.startswith(f"{API_ROOT}/") else None  # jamais un autre hôte
 
 
-Stored = tuple[str, str, float]  # (etag, corps JSON, heure du dernier succès)
-
-
 class CacheStore(Protocol):
     """Persistance de la dernière réponse par URL (ETag, corps, heure du dernier succès)."""
 
-    def load(self, url: str) -> Stored | None: ...
+    def load(self, url: str) -> db.GithubRow | None: ...
     def save(self, url: str, etag: str, body: str, fetched_at: float) -> None: ...
     def touch(self, url: str, fetched_at: float) -> None: ...
+    def delete(self, url: str) -> None: ...
 
 
 class DbStore:
     """`CacheStore` SQLite (table `github_cache`) ; une base illisible ne casse jamais la page."""
 
-    def load(self, url: str) -> Stored | None:
+    def load(self, url: str) -> db.GithubRow | None:
         return self._run(lambda conn: db.read_github_cache(conn, url), None)
 
     def save(self, url: str, etag: str, body: str, fetched_at: float) -> None:
@@ -107,6 +105,9 @@ class DbStore:
 
     def touch(self, url: str, fetched_at: float) -> None:
         self._run(lambda conn: db.touch_github_cache(conn, url, fetched_at), None)
+
+    def delete(self, url: str) -> None:
+        self._run(lambda conn: db.delete_github_cache(conn, url), None)
 
     @staticmethod
     def _run[T](action: Callable[[sqlite3.Connection], T], default: T) -> T:
@@ -143,18 +144,40 @@ class HttpJson:
         return self._walk(path, self._get)
 
     def peek(self, path: str) -> tuple[Any, float] | None:
-        """Dernier instantané persisté (toutes pages connues) et heure de son plus ancien succès."""
+        """Instantané persisté complet (toutes pages) et heure de son plus ancien succès.
+
+        `None` s'il n'y a rien ou si une page annoncée (`rel="next"`) manque : mieux vaut une
+        requête pleine qu'une liste tronquée.
+        """
         times: list[float] = []
+        missing = False
 
         def known(url: str) -> tuple[Any, str | None] | None:
+            nonlocal missing
             page = self._recall(url)
             if page is None:
+                missing = True
                 return None
             times.append(page.at)
             return page.data, page.link
 
         data = self._walk(path, known)
-        return (data, min(times)) if times else None
+        return None if missing or not times else (data, min(times))
+
+    def forget(self, path: str) -> None:
+        """Oublie (mémoire et base) les pages de cet instantané : prochaine lecture pleine."""
+        urls: list[str] = []
+
+        def collect(url: str) -> tuple[Any, str | None] | None:
+            page = self._recall(url)
+            urls.append(url)
+            return (page.data, page.link) if page else None
+
+        self._walk(path, collect)
+        for url in urls:
+            self._known.pop(url, None)
+            if self._store:
+                self._store.delete(url)
 
     def _walk(self, path: str, get: Callable[[str], tuple[Any, str | None] | None]) -> Any:
         url: str | None = f"{API_ROOT}{path}"
@@ -324,6 +347,10 @@ def parse_issues(raw: Any) -> tuple[tuple[Issue, ...], tuple[Pull, ...]]:
     return tuple(issues), tuple(pulls)
 
 
+def _spawn(task: Callable[[], None]) -> None:
+    threading.Thread(target=task, name="github-refresh", daemon=True).start()
+
+
 class GithubCache:
     """Cache mémoire : une lecture GitHub par `ttl`, même après un échec (limite 60 req/h).
 
@@ -340,9 +367,11 @@ class GithubCache:
         wall: Callable[[], float] = time.time,
         ttl: float = CACHE_TTL_S,
         restore: Callable[[str], tuple[Any, float] | None] | None = None,
+        discard: Callable[[str], None] | None = None,
+        spawn: Callable[[Callable[[], None]], None] = _spawn,
     ) -> None:
         self._fetch, self._clock, self._wall, self._ttl = fetch, clock, wall, ttl
-        self._restore = restore
+        self._restore, self._discard, self._spawn = restore, discard, spawn
         self._lock = threading.Lock()
         self._snapshot = Snapshot()
         self._error_at: datetime | None = None
@@ -350,34 +379,51 @@ class GithubCache:
         self._next_at: float | None = None
         self._wait = ttl
 
-    def get(self) -> tuple[Snapshot, datetime | None]:
-        snapshot, error_at, _ = self.read()
-        return snapshot, error_at
-
     def read(self) -> tuple[Snapshot, datetime | None, float | None]:
-        """(instantané, heure de l'erreur, epoch du dernier succès ou 304)."""
+        """(instantané, heure de l'erreur, epoch du dernier succès ou 304).
+
+        Premier accès avec un instantané persisté : il est rendu aussitôt et GitHub est
+        interrogé en arrière-plan (la page n'attend jamais le réseau après un redémarrage).
+        """
         with self._lock:
-            now = self._clock()
-            if self._next_at is None:
+            first = self._next_at is None
+            if first:
                 self._load_persisted()
-            if self._next_at is None or now >= self._next_at:
-                self._wait = self._ttl
-                try:
-                    self._refresh()
-                finally:
-                    self._next_at = now + self._wait
-            return self._snapshot, self._error_at, self._data_at
+            background = first and self._data_at is not None
+            if background:
+                self._next_at = float("inf")  # une seule lecture de fond, jusqu'à son terme
+            elif first or self._clock() >= (self._next_at or 0.0):
+                self._tick()
+            state = self._snapshot, self._error_at, self._data_at
+        if background:
+            self._spawn(self._background)
+        return state
+
+    def _background(self) -> None:
+        with self._lock:
+            self._tick()
+
+    def _tick(self) -> None:
+        now = self._clock()
+        self._wait = self._ttl
+        try:
+            self._refresh()
+        finally:
+            self._next_at = now + self._wait
 
     def _load_persisted(self) -> None:
         if self._restore is None:
             return
+        path = self._issues_path()
         try:
-            restored = self._restore(self._issues_path())
+            restored = self._restore(path)
             if restored:
                 issues, pulls = parse_issues(restored[0])
                 self._snapshot, self._data_at = Snapshot(issues, pulls), restored[1]
-        except Exception as exc:  # donnée persistée illisible : on repart à froid
+        except Exception as exc:  # donnée persistée illisible : oubliée, requête pleine ensuite
             log.warning("instantané GitHub persisté illisible : %s", type(exc).__name__)
+            if self._discard:
+                self._discard(path)
 
     @staticmethod
     def _issues_path() -> str:
@@ -399,7 +445,7 @@ class GithubCache:
 
 
 _HTTP = HttpJson(DbStore())
-CACHE = GithubCache(_HTTP, restore=_HTTP.peek)
+CACHE = GithubCache(_HTTP, restore=_HTTP.peek, discard=_HTTP.forget)
 
 
 # --- Calculs purs -----------------------------------------------------------------------------

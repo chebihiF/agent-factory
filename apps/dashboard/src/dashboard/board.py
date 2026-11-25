@@ -12,7 +12,7 @@ import logging
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Literal
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -228,12 +228,16 @@ def french_date(now: datetime) -> str:
     return f"{WEEKDAYS[now.weekday()]} {now.day} {MONTHS[now.month - 1]} {now.year}"
 
 
-def paris_hm(moment: datetime) -> str:
-    """« HH:MM » à Paris ; « HH:MM UTC » si la base de fuseaux est absente du système."""
+def paris_hm(moment: datetime, now: datetime) -> str:
+    """« HH:MM » à Paris, précédé de « JJ/MM » si ce n'est pas aujourd'hui ; « UTC » sans tzdata."""
     try:
-        return moment.astimezone(ZoneInfo("Europe/Paris")).strftime("%H:%M")
+        zone: tzinfo = ZoneInfo("Europe/Paris")
+        suffix = ""
     except ZoneInfoNotFoundError:
-        return moment.astimezone(UTC).strftime("%H:%M UTC")
+        zone, suffix = UTC, " UTC"
+    local = moment.astimezone(zone)
+    day = "" if local.date() == now.astimezone(zone).date() else local.strftime("%d/%m ")
+    return f"{day}{local.strftime('%H:%M')}{suffix}"
 
 
 def role(agent_type: str | None) -> str:
@@ -511,7 +515,7 @@ def build(
         projects=projects,
         github_error_at=error_at.strftime("%H:%M:%S") if error_at else None,
         github_data_at=data_at.astimezone(UTC).isoformat() if data_at else None,
-        github_data_hm=paris_hm(data_at) if data_at else None,
+        github_data_hm=paris_hm(data_at, now) if data_at else None,
         ingestion=state,
         silent_minutes=minutes,
         tickets_here=tickets_here,

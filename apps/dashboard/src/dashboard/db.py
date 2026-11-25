@@ -258,3 +258,8 @@ def write_github_cache(
 def touch_github_cache(conn: sqlite3.Connection, url: str, fetched_at: float) -> None:
     with conn:
         conn.execute("UPDATE github_cache SET fetched_at = ? WHERE url = ?", (fetched_at, url))
+
+
+def delete_github_cache(conn: sqlite3.Connection, url: str) -> None:
+    with conn:
+        conn.execute("DELETE FROM github_cache WHERE url = ?", (url,))

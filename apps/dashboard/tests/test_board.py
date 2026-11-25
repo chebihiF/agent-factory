@@ -713,7 +713,9 @@ def test_rate_limited_github_shows_persisted_data_time(
     limited = github_api.GithubCache(
         lambda path: (_ for _ in ()).throw(github_api.RateLimited(until=time.time() + 600)),
         restore=lambda path: ([{"number": 9, "title": "Reste visible", "state": "open"}], at),
+        spawn=lambda task: task(),
     )
+    limited.read()  # démarrage : instantané persisté, puis la lecture de fond essuie la limite
     monkeypatch.setattr(github_api, "CACHE", limited)
     page = text(client.get("/").text)
     assert "Données du 14:05" in page
@@ -726,3 +728,9 @@ def test_board_exposes_github_data_time_as_iso_utc(env: None) -> None:
         shown = board.build(conn, github_api.Snapshot(), None, "", at, data_at=at)
     assert shown.github_data_at == "2026-11-25T13:05:00+00:00"
     assert shown.github_data_hm == "14:05"
+
+
+def test_data_time_names_the_day_when_not_today() -> None:
+    at = datetime(2026, 11, 24, 13, 5, tzinfo=UTC)
+    assert board.paris_hm(at, datetime(2026, 11, 25, 9, 0, tzinfo=UTC)) == "24/11 14:05"
+    assert board.paris_hm(at, datetime(2026, 11, 24, 20, 0, tzinfo=UTC)) == "14:05"
