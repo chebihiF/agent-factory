@@ -156,11 +156,12 @@ Règle : `rules/token-budget.md` ; contrat : `contracts/token-ceiling.md`. Outil
 `tools/agents/bin/ceiling.sh` (`tools/agents/ceiling.py`, stdlib, Python 3.9).
 
 ```sh
-tools/agents/bin/ceiling.sh --db vva.db --repo OWNER/REPO             # poste les alertes
-tools/agents/bin/ceiling.sh --db vva.db --repo OWNER/REPO --dry-run   # simule, ne poste rien
+GH_TOKEN=$(gh auth token -u infinitySoftMA) tools/agents/bin/ceiling.sh --db vva.db --repo OWNER/REPO
+GH_TOKEN=$(gh auth token -u infinitySoftMA) tools/agents/bin/ceiling.sh --repo OWNER/REPO --dry-run  # simule
 ```
 
-Même base et même journal que `token-report.sh`. Plafonds : 150 000 tokens (ticket simple),
+Mêmes défauts que `token-report.sh` (`VVA_DB_PATH`, `VVA_AGENTS_JOURNAL`). Le journal est propre au
+dépôt : `--repo` doit être celui dont les tickets alimentent ce journal. Plafonds : 150 000 tokens (ticket simple),
 300 000 (label `complex`). Au-dessus, un commentaire d'alerte (total et plafond) est posé sur le
 ticket, une seule fois par plafond. Alerte seulement. À lancer à la main ou en fin de tick de la
 boucle (non câblé ici) ; les seuils des hooks locaux sont alignés à la main sur la règle.

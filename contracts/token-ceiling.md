@@ -1,6 +1,7 @@
 # Plafond de tokens par ticket (#188)
 
-`tools/agents/bin/ceiling.sh --db <base> --repo <OWNER/REPO> [--journal <fichier>] [--dry-run]`.
+`GH_TOKEN=$(gh auth token -u infinitySoftMA) tools/agents/bin/ceiling.sh --repo <OWNER/REPO> [--db <base>] [--journal <fichier>] [--dry-run]`.
+`--db` et `--journal` ont les défauts de `token-report.sh` (`VVA_DB_PATH` puis `./vva.db` ; `VVA_AGENTS_JOURNAL`).
 Règle : [`rules/token-budget.md`](../rules/token-budget.md).
 
 ## Entrée
@@ -10,6 +11,8 @@ Règle : [`rules/token-budget.md`](../rules/token-budget.md).
   ([contrat](agents-journal.schema.json)), comme `token-report.sh`. Les tokens sans ticket sont
   ignorés.
 - Label du ticket, lu par `gh issue view` : `complex` ou non.
+- Le journal est propre au dépôt : il ne mémorise pas le dépôt d'un ticket, donc `--repo` doit être
+  le dépôt dont les tickets alimentent ce journal, sinon les numéros sont lus dans le mauvais dépôt.
 
 ## Plafonds
 
@@ -32,4 +35,6 @@ ticket au-dessus de 150 000.
 - Le commentaire ne contient que des compteurs : aucune donnée d'enfant, aucun secret, aucun
   identifiant de session. Aucun service payant. Alerte seulement, aucun blocage.
 
-Compte GitHub : celui du `gh` actif ; le projet impose le sien via `GH_TOKEN` s'il le faut.
+Compte GitHub : le commentaire part sous le compte du `gh` actif ; le forcer par `GH_TOKEN` comme
+ci-dessus (bot `infinitySoftMA`). Un échec de `gh issue comment` est signalé par « alerte NON postée »
+(distinct d'un ticket illisible).

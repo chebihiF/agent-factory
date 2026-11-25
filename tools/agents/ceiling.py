@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -21,7 +22,6 @@ import token_report as tr
 
 SIMPLE_CEILING = 150_000
 COMPLEX_CEILING = 300_000
-IMMEDIATE_HANDOFF = 250_000  # relève immédiate (la frontière de phase : handoff.THRESHOLD)
 LABEL_COMPLEX = "complex"
 GH_TIMEOUT_S = 30
 NONE_LINE = "aucun dépassement de plafond"
@@ -85,7 +85,10 @@ def _check_one(number: int, total: int, repo: str, gh: Gh, dry_run: bool) -> str
     if dry_run:
         return f"{head} : alerte à poster (dry-run)"
     comment = ["issue", "comment", str(number), "-R", repo, "--body-file", "-"]
-    gh(comment, alert_text(total, ceiling))
+    try:
+        gh(comment, alert_text(total, ceiling))
+    except CeilingError as exc:
+        return f"{head} : alerte NON postée, gh issue comment a échoué ({exc})"
     return f"{head} : alerte postée"
 
 
@@ -121,9 +124,15 @@ def gh_cli(args: Sequence[str], stdin: str | None = None) -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ceiling", description=__doc__)
-    parser.add_argument("--db", type=Path, required=True)
+    default_db = Path(os.environ.get("VVA_DB_PATH") or "vva.db")
+    parser.add_argument("--db", type=Path, default=default_db, help="défaut : VVA_DB_PATH, vva.db")
     parser.add_argument("--repo", required=True, help="OWNER/REPO des tickets suivis")
-    parser.add_argument("--journal", type=Path, default=tr.DEFAULT_JOURNAL)
+    parser.add_argument(
+        "--journal",
+        type=Path,
+        default=tr._env_path("VVA_AGENTS_JOURNAL"),
+        help="défaut : VVA_AGENTS_JOURNAL, ~/.vva/agents-journal.jsonl",
+    )
     parser.add_argument("--dry-run", action="store_true", help="ne poste rien")
     return parser
 

@@ -162,6 +162,30 @@ def test_cli_base_absente(tmp_path: Path) -> None:
         ce.main(["--db", str(tmp_path / "absente.db"), "--repo", REPO])
 
 
+def test_echec_du_commentaire_message_distinct(tmp_path: Path) -> None:
+    class CommentFails(FakeGh):
+        def __call__(self, args: Sequence[str], stdin: str | None = None) -> str:
+            if args[:2] == ["issue", "comment"]:
+                raise ce.CeilingError("gh a échoué : CalledProcessError")
+            return super().__call__(args, stdin)
+
+    totals = _totals(tmp_path, [("s1", 200_000)], {"s1": 4})
+    lines = ce.check(totals, CommentFails({4: ([], [])}), REPO)
+    assert any("alerte NON postée" in line and "gh issue comment" in line for line in lines)
+    assert not any("illisible" in line for line in lines)
+
+
+def test_cli_defauts_comme_token_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    db = _db(tmp_path / "v.db", [("s1", 200_000)])
+    journal = _journal(tmp_path / "j.jsonl", {"s1": 6})
+    monkeypatch.setenv("VVA_DB_PATH", str(db))
+    monkeypatch.setenv("VVA_AGENTS_JOURNAL", str(journal))
+    assert ce.main(["--repo", REPO, "--dry-run"], FakeGh({6: ([], [])})) == 0
+    assert "#6" in capsys.readouterr().out
+
+
 # Règle et contrat versionnés
 
 
@@ -182,8 +206,7 @@ def test_seuils_de_releve() -> None:
     text = _words(RULE)
     assert f"{ho.THRESHOLD:,}".replace(",", " ") in text  # 150 000 : prochaine frontière de phase
     assert "prochaine frontière de phase" in text
-    assert f"{ce.IMMEDIATE_HANDOFF:,}".replace(",", " ") in text
-    assert ce.IMMEDIATE_HANDOFF == 250_000
+    assert "250 000" in text
     assert "immédiate" in text and f"#{ho.ISSUE}" in text
 
 
@@ -203,4 +226,6 @@ def test_contrat_documente_entree_sortie() -> None:
     for needle in (ce.marker(ce.SIMPLE_CEILING), ce.marker(ce.COMPLEX_CEILING), "`complex`"):
         assert needle in text
     assert "token_usage" in text and "aucune donnée d'enfant" in text
+    assert "GH_TOKEN=$(gh auth token -u infinitySoftMA)" in text
+    assert "journal est propre au dépôt" in text
     assert "token-ceiling.md" in (ROOT / "contracts" / "README.md").read_text(encoding="utf-8")
