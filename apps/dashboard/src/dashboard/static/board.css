@@ -3,8 +3,7 @@
    Mise en page par @container : >= 1000 px côte à côte, en dessous tout empilé (360 px sans défilement horizontal). */
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--font-size-body); line-height: 1.5; }
-main { container-type: inline-size; padding: var(--space-4); max-width: 1280px; margin: 0 auto; display: grid; gap: var(--space-4); }
+main { container-type: inline-size; padding: var(--space-4); max-width: 1200px; margin: 0 auto; display: grid; gap: var(--space-4); }
 h1 { font-size: var(--font-size-title); margin: 0; }
 h2 { font-size: var(--font-size-heading); margin: 0 0 var(--space-3); display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
 h3 { font-size: var(--font-size-body); margin: 0; }

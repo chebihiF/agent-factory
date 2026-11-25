@@ -2,39 +2,45 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <title>Interactions entre agents — Agents Dashboard</title>
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
-    body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--font-size-body); }
-    main { display: grid; gap: var(--space-5); padding: var(--space-5); max-width: 1280px; margin: 0 auto; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+    main { display: grid; gap: var(--space-5); }
+    .page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
     h1 { font-size: var(--font-size-title); margin: 0; }
     h2 { font-size: var(--font-size-heading); margin: 0 0 var(--space-3); }
     #live-status { margin: 0; font-size: var(--font-size-small); color: var(--color-text-muted); }
     #sessions { display: grid; gap: var(--space-5); }
     .panel { background: var(--color-surface); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-4); min-width: 0; }
-    .scroll { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: var(--font-size-data); font-variant-numeric: tabular-nums; }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     th { text-align: left; font-size: var(--font-size-label); color: var(--color-text-muted); font-weight: 600; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border); }
-    td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); vertical-align: top; }
+    td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); vertical-align: top; overflow-wrap: anywhere; }
     code, time { font-family: var(--font-mono); font-size: var(--font-size-small); }
     .muted { color: var(--color-text-muted); }
     [role="alert"] { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-danger); background: var(--color-danger-bg); color: var(--color-danger); }
-    [role="alert"] a { color: inherit; font-weight: 600; }
+    [role="alert"] a { display: inline-flex; align-items: center; min-height: var(--target-min); color: inherit; font-weight: 600; }
+    /* < 900 px : chaque sous-agent devient une carte empilée (le libellé de colonne vient de data-label) */
+    @media (max-width: 899px) {
+      table, tbody, tr, td { display: block; }
+      thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+      tr { padding: var(--space-3); margin-bottom: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-2); }
+      td { display: grid; grid-template-columns: minmax(0, 8rem) minmax(0, 1fr); gap: var(--space-3); padding: var(--space-1) 0; border-bottom: 0; }
+      td::before { content: attr(data-label); font-weight: 600; color: var(--color-text-muted); }
+    }
     .empty { text-align: center; padding: var(--space-7) var(--space-4); }
   </style>
 </head>
 <body>
-  <main{% if last_id is not none %} data-stream data-last-id="{{ last_id }}" data-refresh="#sessions"{% endif %}>
-    <header>
+  {% with active="/interactions" %}{% include "_appbar.html" %}{% endwith %}
+  <main class="page"{% if last_id is not none %} data-stream data-last-id="{{ last_id }}" data-refresh="#sessions"{% endif %}>
+    <div class="page-head">
       <h1>Interactions entre agents</h1>
-      {% with active="/interactions" %}{% include "_nav.html" %}{% endwith %}
       <p id="live-status" role="status"></p>
-    </header>
+    </div>
     {% if error_at %}
     <div role="alert">
       <strong>Erreur :</strong> les données sont indisponibles (tentative à <time>{{ error_at }}</time> UTC).
@@ -47,26 +53,24 @@
         <h2 id="session-{{ loop.index }}">Session <code>{{ s.session_id }}</code></h2>
         <p class="muted">{{ s.event_count }} événement(s) · de <time datetime="{{ s.first_ts }}">{{ s.first_label }}</time> à <time datetime="{{ s.last_ts }}">{{ s.last_label }}</time> UTC</p>
         {% if s.subagents %}
-        <div class="scroll">
-          <table>
-            <caption class="sr-only">Sous-agents lancés par la session {{ s.session_id }}</caption>
-            <thead>
-              <tr><th scope="col">Sous-agent</th><th scope="col">Identifiant</th><th scope="col">Modèle</th><th scope="col">Début (UTC)</th><th scope="col">État</th><th scope="col">Durée</th></tr>
-            </thead>
-            <tbody>
-              {% for a in s.subagents %}
-              <tr>
-                <td>{{ a.agent_type or "—" }}</td>
-                <td><code>{{ a.agent_id }}</code></td>
-                <td>{% if a.model %}<code>{{ a.model }}</code>{% else %}—{% endif %}</td>
-                <td>{{ a.start_label }}</td>
-                <td>{% if a.running %}○ En cours{% elif a.silent %}◌ Terminé sans signal{% else %}● Terminé{% endif %}</td>
-                <td>{{ a.duration_label }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        <table>
+          <caption class="sr-only">Sous-agents lancés par la session {{ s.session_id }}</caption>
+          <thead>
+            <tr><th scope="col">Sous-agent</th><th scope="col">Identifiant</th><th scope="col">Modèle</th><th scope="col">Début (UTC)</th><th scope="col">État</th><th scope="col">Durée</th></tr>
+          </thead>
+          <tbody>
+            {% for a in s.subagents %}
+            <tr>
+              <td data-label="Sous-agent">{{ a.agent_type or "—" }}</td>
+              <td data-label="Identifiant"><code>{{ a.agent_id }}</code></td>
+              <td data-label="Modèle">{% if a.model %}<code>{{ a.model }}</code>{% else %}—{% endif %}</td>
+              <td data-label="Début (UTC)">{{ a.start_label }}</td>
+              <td data-label="État">{% if a.running %}○ En cours{% elif a.silent %}◌ Terminé sans signal{% else %}● Terminé{% endif %}</td>
+              <td data-label="Durée">{{ a.duration_label }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
         {% else %}
         <p class="muted">Aucun sous-agent lancé.</p>
         {% endif %}

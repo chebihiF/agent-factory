@@ -1,3 +1,23 @@
-nav[aria-label="Navigation principale"] { display: flex; flex-wrap: wrap; gap: var(--space-4); font-size: var(--font-size-small); }
-nav[aria-label="Navigation principale"] a { color: var(--color-accent); font-weight: 600; }
-nav[aria-label="Navigation principale"] a[aria-current="page"] { color: var(--color-text); text-decoration: none; }
+/* nav.css — coque commune des pages (#192, #193, #194). Spec : docs/design/pause-plafond.md.
+   < 900 px : barre d'application haute + barre d'onglets basse (un seul <nav>, fixé en bas) ;
+   >= 900 px : en-tête avec navigation horizontale. 900 px = --bp-wide de la spec (une variable
+   CSS ne peut pas servir dans une media query). Variables de tokens.css uniquement. */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; padding-bottom: calc(var(--target-tab) + var(--space-6) + env(safe-area-inset-bottom, 0px)); background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--font-size-body); line-height: 1.5; }
+.page { max-width: 1200px; margin: 0 auto; padding: var(--space-4); overflow-wrap: anywhere; }
+.appbar { display: flex; align-items: center; gap: var(--space-3); min-height: 60px; padding: 0 var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border-subtle); }
+.brand { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-weight: 700; }
+.brand .icon { color: var(--color-accent); }
+.icon { width: 24px; height: 24px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+nav[aria-label="Navigation principale"] { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; gap: var(--space-1); padding: var(--space-2) var(--space-2) max(var(--space-3), env(safe-area-inset-bottom)); background: var(--color-surface); border-top: 1px solid var(--color-border); }
+nav[aria-label="Navigation principale"] a { flex: 1 1 0; min-width: 0; min-height: var(--target-tab); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: var(--space-1); border-radius: var(--radius-lg); color: var(--color-accent); font-weight: 600; line-height: 1.2; text-align: center; text-decoration: none; overflow-wrap: anywhere; }
+nav[aria-label="Navigation principale"] a[aria-current="page"] { background: var(--color-surface-2); color: var(--color-text); font-weight: 700; }
+@media (min-width: 900px) {
+  body { padding-bottom: 0; }
+  .page { padding: var(--space-5); }
+  .appbar { min-height: 64px; padding: 0 var(--space-5); }
+  nav[aria-label="Navigation principale"] { position: static; z-index: auto; align-self: stretch; margin-left: var(--space-5); padding: 0; gap: var(--space-2); background: none; border-top: 0; }
+  nav[aria-label="Navigation principale"] a { flex: none; flex-direction: row; min-height: var(--target-min); padding: 0 var(--space-3); border-radius: 0; border-bottom: 3px solid transparent; }
+  nav[aria-label="Navigation principale"] a[aria-current="page"] { background: none; border-bottom: 3px solid var(--color-accent); }
+  nav[aria-label="Navigation principale"] .icon { display: none; }
+}

@@ -2,25 +2,24 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Tokens — Agents Dashboard</title>
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/nav.css">
   <style>
-    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { margin: 0 auto; max-width: 48rem; padding: 2rem 1rem 4rem; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
-    th, td { padding: .4rem .6rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
-    th { text-align: left; font-weight: 600; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    footer { position: fixed; bottom: 1rem; font-size: .8rem; opacity: .6; }
+    h1 { font-size: var(--font-size-title); margin: 0 0 var(--space-4); }
+    h2 { font-size: var(--font-size-heading); margin: var(--space-5) 0 var(--space-2); }
+    table { width: 100%; border-collapse: collapse; margin-bottom: var(--space-5); }
+    th, td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); overflow-wrap: anywhere; }
+    th { text-align: left; font-weight: 600; color: var(--color-text-muted); }
+    .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .muted { color: var(--color-text-muted); margin: var(--space-3) 0 0; }
   </style>
 </head>
 <body>
-  <header>
-    {% with active="/tokens" %}{% include "_nav.html" %}{% endwith %}
-    <h1>Tokens</h1>
-  </header>
+  {% with active="/tokens" %}{% include "_appbar.html" %}{% endwith %}
+  <main class="page">
+  <h1>Tokens</h1>
   {% if not report.by_agent and not report.by_model %}
   <p>Aucune donnée sur les 7 derniers jours.</p>
   {% if hint %}<p>{{ hint }}</p>
@@ -37,9 +36,10 @@
     </tbody>
   </table>
   {% endfor %}
-  <p><small>Tous types confondus (entrée, sortie, cache). « (fil principal) » : tokens hors sous-agent nommé.</small></p>
+  <p class="muted">Tous types confondus (entrée, sortie, cache). « (fil principal) » : tokens hors sous-agent nommé.</p>
   {% endif %}
-  {% if receipt.last_at %}<p><small>Dernier envoi OTLP : {{ receipt.last_at }} ({{ receipt.batches }} lots, {{ receipt.accepted }} points retenus, {{ receipt.rejected }} rejetés).</small></p>{% endif %}
-  <footer>v{{ version }}</footer>
+  {% if receipt.last_at %}<p class="muted">Dernier envoi OTLP : {{ receipt.last_at }} ({{ receipt.batches }} lots, {{ receipt.accepted }} points retenus, {{ receipt.rejected }} rejetés).</p>{% endif %}
+  <footer class="muted">v{{ version }}</footer>
+  </main>
 </body>
 </html>

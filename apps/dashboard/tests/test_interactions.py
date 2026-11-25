@@ -176,6 +176,17 @@ def test_semantic_structure(client: TestClient) -> None:
     assert "<caption" in html and 'scope="col"' in html
 
 
+def test_subagent_cells_carry_their_column_label_for_the_stacked_cards(
+    client: TestClient,
+) -> None:
+    seed(*sub(1, "10:00:00", "10:00:03"))
+    html = client.get("/interactions").text
+    headers = re.findall(r'<th scope="col">([^<]+)</th>', html)
+    assert headers == ["Sous-agent", "Identifiant", "Modèle", "Début (UTC)", "État", "Durée"]
+    assert re.findall(r'<td data-label="([^"]+)"', html) == headers
+    assert "@media (max-width: 899px)" in html and "attr(data-label)" in html
+
+
 def test_template_uses_only_design_tokens() -> None:
     text = (TEMPLATES / "interactions.html").read_text(encoding="utf-8")
     assert '<link rel="stylesheet" href="/static/tokens.css">' in text

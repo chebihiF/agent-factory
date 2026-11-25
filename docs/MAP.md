@@ -39,9 +39,10 @@
 - `apps/dashboard/src/dashboard/static/nav.css`
 - `apps/dashboard/src/dashboard/static/tokens.css`
 - `apps/dashboard/src/dashboard/stream.py` — GET /stream : flux SSE des événements d'agents (contrat : contracts/dashboard-routes.md).
+- `apps/dashboard/src/dashboard/templates/_appbar.html`
 - `apps/dashboard/src/dashboard/templates/_nav.html`
 - `apps/dashboard/src/dashboard/templates/board.html`
-- `apps/dashboard/src/dashboard/templates/interactions.html`
+- `apps/dashboard/src/dashboard/templates/interactions.html` — live-status { margin: 0; font-size: var(--font-size-small); color: var(--color-text-muted)
 - `apps/dashboard/src/dashboard/templates/login.html`
 - `apps/dashboard/src/dashboard/templates/tokens.html`
 - `apps/dashboard/src/dashboard/tokens.py` — Totaux de tokens par agent et par modèle, sur 24 h et 7 jours glissants.
@@ -56,6 +57,7 @@
 - `apps/dashboard/tests/test_interactions.py` — Interactions entre agents (#6) : sessions, sous-agents (SubagentStart/Stop) et durée.
 - `apps/dashboard/tests/test_main.py` — Accueil (tableau de bord, #179), redirections et navigation commune (#58).
 - `apps/dashboard/tests/test_otlp.py` — Réception OTLP/HTTP JSON des métriques de tokens (#7).
+- `apps/dashboard/tests/test_responsive.py` — Refonte mobile (#192, #193, #194) : nav unique, cibles >= 44 px, polices >= 16 px, 360 px.
 - `apps/dashboard/tests/test_stream.py` — Flux SSE /stream (#6) : session exigée, id croissant, reprise par Last-Event-ID.
 - `apps/dashboard/tests/test_tickets_qa.py` — QA #182 : cas limites de la liste des tickets (lecture seule, unicode, sans jeton, statut)
 - `apps/dashboard/tests/test_tokens.py` — Page /tokens : totaux par agent et par modèle sur 24 h et 7 jours (#7).
@@ -81,6 +83,7 @@
 - `docs/design/activity.md` — Écran « Activité des agents »
 - `docs/design/dashboard-refonte.md` — Refonte du dashboard des agents (ticket #179)
 - `docs/design/filtre-projet.md` — Filtre par projet (ticket #68)
+- `docs/design/pause-plafond.md` — Écran « Contrôles » : monitoring en lecture seule + commandes admin (ticket #185)
 - `docs/design/progress.md` — Écran « Suivi du projet » (`/progress`)
 - `docs/design/refonte.md` — Refonte du dashboard — spec (#92, couvre #93 à #99)
 - `docs/design/tokens.md` — Écran « Tokens » (`/tokens`) — spec alignée sur le réel (#129, écarts #118)

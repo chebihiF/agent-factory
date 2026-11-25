@@ -1,5 +1,12 @@
+{#- Navigation principale : l'unique <nav> exposé de chaque page (barre d'onglets basse < 900 px,
+    navigation horizontale >= 900 px, même balisage). Icônes : SVG inline, trait 2 px. -#}
+{% set icons = {
+  "/": '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  "/tokens": '<path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/>',
+  "/interactions": '<path d="M4 5h16v11H9l-5 4z"/>',
+} %}
 <nav aria-label="Navigation principale">
-  {% for href, label in [("/", "Tableau de bord"), ("/tokens", "Tokens"), ("/interactions", "Interactions")] %}
-  <a href="{{ href }}"{% if href == active %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% for href, label in [("/", "Accueil"), ("/tokens", "Tokens"), ("/interactions", "Interactions")] %}
+  <a href="{{ href }}"{% if href == active %} aria-current="page"{% endif %}><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{{ icons[href] | safe }}</svg><span>{{ label }}</span></a>
   {% endfor %}
 </nav>
