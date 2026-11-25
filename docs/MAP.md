@@ -56,6 +56,7 @@
 - `apps/dashboard/tests/test_board_qa.py` — QA #179 : cas limites du tableau de bord (360 px, unicode/darija, lecture seule).
 - `apps/dashboard/tests/test_controls.py` — Pause et plafond de tokens (#8) : API GET /api/v1/control lue par le hook.
 - `apps/dashboard/tests/test_controls_page.py` — Onglet « Contrôles » (#185) : lecture seule pour le visiteur, Pause et Plafond pour l'admi
+- `apps/dashboard/tests/test_controls_qa.py` — QA #185 : cas limites complémentaires (no-store en lecture, double clic, entrées exotiques
 - `apps/dashboard/tests/test_ensure_token.py` — Le script de déploiement crée le jeton d'ingestion une seule fois, en 600.
 - `apps/dashboard/tests/test_github.py` — Lecture GitHub du tableau de bord (#26, recentrée par #179) : client, cache, analyse.
 - `apps/dashboard/tests/test_ingest.py` — Ingestion authentifiée des événements d'agents (#3).
@@ -76,6 +77,7 @@
 - `contracts/dashboard-routes.md` — Routes du dashboard
 - `contracts/ingest-api.md` — API d'ingestion des événements d'agents
 - `contracts/tickets.schema.json` — données JSON
+- `contracts/token-ceiling.md` — Plafond de tokens par ticket (#188)
 - `contracts/token-usage.md` — Métriques de tokens (OTLP/HTTP JSON)
 - `docs/SCRUM.md` — Scrum — fonctionnement de l'équipe (humain + agents)
 - `docs/adr/ADR-002-stack-dashboard.md` — ADR-002 — Stack du dashboard (et des services Python)
@@ -121,6 +123,7 @@
 - `pyproject.toml`
 - `rules/session-agents.md` — Règles de session des agents (enchaînement et passation)
 - `rules/tech-lead.md` — Consignes génériques du tech lead (à recopier dans le fichier de consignes local du projet
+- `rules/token-budget.md` — Plafonds de tokens et seuils de relève
 - `scripts/install_agents.py` — Installe agents, skills, hooks et règles de l'usine dans le `.claude/` local d'un projet.
 - `scripts/test_install_agents.py` — install_agents.py : installation locale des agents, skills et hooks dans un projet cible.
 - `skills/deploy-check/SKILL.md` — deploy-check
@@ -129,15 +132,18 @@
 - `skills/ticket/checklist.md` — Checklist /ticket — Definition of Done
 - `tools/agents/agent_loop.py` — Boucle autonome planifiée (#18) : un ticket « Prêt » par tick, sous budget de tokens.
 - `tools/agents/bin/agent-loop.sh` — Boucle autonome planifiée (#18). Voir docs/agents.md.
+- `tools/agents/bin/ceiling.sh` — Plafond de tokens par ticket : alerte au dépassement (#188). Voir rules/token-budget.md.
 - `tools/agents/bin/cr.sh` — CR d'agents en base SQLite (#61). Voir docs/agents.md.
 - `tools/agents/bin/handoff.sh` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/bin/token-report.sh` — Tokens par ticket, agent et modèle, ≤ 15 lignes, compteurs seuls (#19). Voir docs/agents.m
+- `tools/agents/ceiling.py` — Plafond de tokens par ticket : alerte au dépassement (#188). Voir rules/token-budget.md.
 - `tools/agents/config/loop.example.yml` — Boucle autonome planifiée (#18) : copier en ~/.vva/loop.yml (local, jamais commité), puis
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report
 - `tools/agents/cr.py` — CR d'agents en base SQLite : hook `record` et lecture `status` (#61). Voir docs/agents.md.
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/launchd/agents-loop.plist.template` — Boucle autonome planifiée (#18) : rendu par `make loop-install` (agent_loop.py install).
 - `tools/agents/tests/test_agent_loop.py` — Boucle autonome planifiée (#18) : gh, contrôles, pool, session et launchctl sont injectés.
+- `tools/agents/tests/test_ceiling.py` — Plafonds de tokens par ticket et seuils de relève (#188) : alerte, règle et contrat.
 - `tools/agents/tests/test_cr.py` — CR d'agents en base SQLite et `make status` (#61). Faux secrets construits à l'exécution.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
 - `tools/agents/tests/test_session_rules.py` — Règle de session des agents (#178) : contenu, bornes et référence par le tech lead.
