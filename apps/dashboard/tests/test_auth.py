@@ -175,6 +175,21 @@ def test_contract_documents_routes_env_and_cookie() -> None:
     assert {"/login", "/", "/healthz"} <= documented <= served
 
 
+def test_contract_matches_served_routes_and_redirects() -> None:
+    """#191 : le contrat ne liste que des routes servies ; pages protégées = 303 vers /login."""
+    text = CONTRACT.read_text(encoding="utf-8")
+    served = set(app.openapi()["paths"])
+    row = r"^\| `GET (/[a-z/]*)` \| (session[^|]*|admin[^|]*) \| ([^|]*) \|$"
+    rows = re.findall(row, text, re.M)
+    pages = {path: reply for path, _, reply in rows if path != "/stream"}
+    assert {"/", "/interactions", "/tokens", "/controls"} <= set(pages)
+    for path, reply in pages.items():
+        assert "303 vers `/login`" in reply, path
+    for gone in ("/progress", "/api/v1/progress", "/activity"):
+        assert gone not in served and gone not in {p for p, *_ in rows}, gone
+    assert "404 avec ou sans session" in text
+
+
 def test_non_ascii_or_huge_expiry_is_rejected_without_error() -> None:
     assert not auth.verify_session(SESSION_KEY, "\u00b2.x", now=0)
     assert not auth.verify_session(SESSION_KEY, "9" * 5000 + ".x", now=0)

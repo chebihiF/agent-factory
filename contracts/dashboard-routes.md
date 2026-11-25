@@ -57,8 +57,10 @@ configuration, limite, taille, mot de passe ; une tentative admise compte qu'ell
 ## Routes
 
 Retirées par #179 (tableau de bord unique, lecture seule) : `/progress`, `/api/v1/progress` (et
-`progress.schema.json`), `/activity` : 404. `/controls` revient avec #185 (onglet « Contrôles »,
-voir [`control-api.md`](control-api.md)).
+`progress.schema.json`), `/activity` : **404 avec ou sans session** (la route n'existe plus, jamais
+de 303 vers `/login` ; décision #191). `/controls` revient avec #185 (onglet « Contrôles », voir
+[`control-api.md`](control-api.md)). Sans session, toute page protégée répond 303 vers `/login`
+(`/stream` : 401) ; seuls `/healthz`, `/login`, `/admin/login` et `/static/*` sont publics.
 
 | Route | Accès | Réponses |
 |---|---|---|
@@ -68,7 +70,7 @@ voir [`control-api.md`](control-api.md)).
 | `POST /login` | public, limité | voir ci-dessous |
 | `GET /interactions` | session | 200 page ; 303 vers `/login` sans session valide (aucune lecture de la base) ; 503 si la base est illisible |
 | `GET /tokens` | session | 200 page (totaux par agent et modèle, 24 h / 7 j) ; 303 vers `/login` sans session valide ; voir [`token-usage.md`](token-usage.md) |
-| `GET /controls` | session ou admin | onglet « Contrôles » (#185) : lecture seule, commandes Pause, Reprise et Plafond pour l'admin ; voir [`control-api.md`](control-api.md) |
+| `GET /controls` | session ou admin | 200 onglet « Contrôles » (#185) : lecture seule, commandes Pause, Reprise et Plafond pour l'admin ; 303 vers `/login` sans session ni admin ; voir [`control-api.md`](control-api.md) |
 | `GET /stream` | session | 200 `text/event-stream` ; **401** sans session valide (aucune lecture de la base) ; 503 si la base est illisible |
 | `GET /static/live.js` | public | client temps réel (`EventSource`), sans dépendance ni CDN |
 | `GET /static/tokens.css` | public | feuille de style du design system |

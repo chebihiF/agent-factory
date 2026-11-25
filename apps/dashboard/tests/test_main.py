@@ -103,6 +103,27 @@ def test_old_pages_are_gone(client: TestClient, path: str) -> None:
     assert client.get(path).status_code == 404
 
 
+REMOVED = ["/progress", "/api/v1/progress", "/activity"]
+
+
+@pytest.mark.parametrize("path", REMOVED)
+def test_old_pages_are_gone_without_session_too(env: None, path: str) -> None:
+    """#191 : 404 pour tous, jamais 303 vers /login (la route n'existe plus)."""
+    assert new_client().get(path).status_code == 404
+
+
+@pytest.mark.parametrize("path", ["/", "/interactions", "/tokens", "/controls"])
+def test_protected_pages_redirect_visitor_to_login(env: None, path: str) -> None:
+    resp = new_client().get(path)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/login"
+
+
+def test_stream_is_401_and_healthz_is_open_without_session(env: None) -> None:
+    assert new_client().get("/stream").status_code == 401
+    assert new_client().get("/healthz").status_code == 200
+
+
 def test_nav_is_not_shown_on_login(env: None) -> None:
     assert "<nav" not in new_client().get("/login").text
 
