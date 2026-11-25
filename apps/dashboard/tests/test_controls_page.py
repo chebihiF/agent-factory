@@ -89,6 +89,7 @@ def post_forms(html: str) -> list[str]:
 def test_controls_redirects_anonymous_to_login() -> None:
     resp = new_client().get("/controls")
     assert resp.status_code == 303 and resp.headers["location"] == "/login"
+    assert resp.headers["cache-control"] == "no-store"
 
 
 def test_visitor_sees_state_read_only_without_any_command() -> None:
@@ -143,6 +144,42 @@ def test_pause_without_confirmation_sends_nothing() -> None:
     for data in ({"csrf": token}, {"csrf": token, "confirm": "non"}):
         assert client.post("/controls/pause", data=data).status_code == 422
     assert controls()[0] is False
+
+
+# --- Reprise (décision du parent du 24/11) ------------------------------------------------------
+def pause_now() -> None:
+    with db.connect() as conn:
+        db.pause(conn, "manuel")
+
+
+def test_resume_after_confirmation_shows_en_marche() -> None:
+    pause_now()
+    client = admin_client()
+    html = client.get("/controls").text
+    assert 'href="/controls?confirmer=reprise"' in html and "Reprendre les agents" in html
+    panel = client.get("/controls?confirmer=reprise").text
+    assert "Reprendre tous les agents ?" in panel
+    assert set(post_forms(panel)) == {"/controls/resume", "/admin/logout"}
+    resp = client.post("/controls/resume", data={"csrf": csrf_of(panel), "confirm": "oui"})
+    assert resp.status_code == 303 and resp.headers["location"] == "/controls?fait=reprise"
+    assert resp.headers["cache-control"] == "no-store"
+    assert controls()[:2] == (False, None)
+    html = client.get("/controls?fait=reprise").text
+    assert "✓ Agents relancés." in html and "● En marche" in html
+
+
+def test_resume_without_confirmation_sends_nothing() -> None:
+    pause_now()
+    client = admin_client()
+    token = csrf_of(client.get("/controls?confirmer=reprise").text)
+    assert client.post("/controls/resume", data={"csrf": token}).status_code == 422
+    assert controls()[0] is True
+
+
+def test_visitor_never_sees_the_resume_command() -> None:
+    pause_now()
+    html = visitor().get("/controls?confirmer=reprise").text
+    assert "Reprendre" not in html and post_forms(html) == []
 
 
 # --- Scénario : régler le plafond ---------------------------------------------------------------
@@ -206,7 +243,7 @@ def test_bounds_one_and_one_billion_are_accepted() -> None:
 
 
 # --- Scénario : accès protégé et unique écriture ------------------------------------------------
-@pytest.mark.parametrize("path", ["/controls/pause", "/controls/cap"])
+@pytest.mark.parametrize("path", ["/controls/pause", "/controls/resume", "/controls/cap"])
 def test_write_routes_refuse_visitor_and_anonymous_with_no_store(path: str) -> None:
     for client in (new_client(), visitor()):
         resp = client.post(path, data={"confirm": "oui", "cap": "7"})
@@ -215,7 +252,7 @@ def test_write_routes_refuse_visitor_and_anonymous_with_no_store(path: str) -> N
     assert controls()[:3] == (False, None, 500_000)
 
 
-@pytest.mark.parametrize("path", ["/controls/pause", "/controls/cap"])
+@pytest.mark.parametrize("path", ["/controls/pause", "/controls/resume", "/controls/cap"])
 def test_write_routes_refuse_missing_or_wrong_csrf(path: str) -> None:
     client = admin_client()
     for data in ({"confirm": "oui", "cap": "7"}, {"csrf": "faux", "confirm": "oui", "cap": "7"}):
@@ -234,7 +271,7 @@ def test_write_routes_refused_after_5_failed_logins() -> None:
     assert controls()[0] is False
 
 
-WRITES = {("POST", "/controls/pause"), ("POST", "/controls/cap")}
+WRITES = {("POST", "/controls/pause"), ("POST", "/controls/resume"), ("POST", "/controls/cap")}
 NON_GET = {
     ("POST", "/login"),
     ("POST", "/admin/login"),
@@ -263,13 +300,14 @@ def test_only_pause_and_cap_routes_write_controls(db_path: Path) -> None:
         form = {"csrf": token, "confirm": "oui", "cap": "7", "password": "faux"}
         client.request(method, path, data=form if method == "POST" else None)
     assert dump(db_path) == before
-    sources = {
-        p.name for p in SRC.glob("*.py") if re.search(r"db\.(pause|set_cap)\(", p.read_text())
-    }
+    writer = re.compile(r"\bdb\.(pause|resume|set_cap)\b")
+    sources = {p.name for p in SRC.glob("*.py") if writer.search(p.read_text())}
     assert sources == {"controls.py"}
     client.post("/controls/pause", data={"csrf": token, "confirm": "oui"})
     client.post("/controls/cap", data={"csrf": token, "cap": "7", "confirm": "oui"})
     assert controls()[:3] == (True, "manuel", 7)
+    client.post("/controls/resume", data={"csrf": token, "confirm": "oui"})
+    assert controls()[0] is False
 
 
 def test_ingestion_routes_never_touch_controls() -> None:

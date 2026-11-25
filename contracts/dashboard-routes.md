@@ -10,7 +10,8 @@ Pages HTML servies au parent (épique #2, ticket #5). L'ingestion est décrite d
 |---|---|
 | `DASHBOARD_PASSWORD_HASH` | hash du mot de passe : `pbkdf2_sha256:<itérations>:<sel hex>:<hash hex>` (PBKDF2-HMAC-SHA256, stdlib ; 600 000 itérations par défaut) |
 | `DASHBOARD_SESSION_KEY` | clé HMAC de signature des sessions, **32 caractères minimum** (ex. `python -c "import secrets; print(secrets.token_urlsafe(48))"`) |
-| `ADMIN_PASSWORD_HASH` | hash du mot de passe **admin** (#185), même format et même commande que `DASHBOARD_PASSWORD_HASH`, mot de passe différent ; absent ou vide : admin désactivé (403) |
+| `ADMIN_PASSWORD_HASH` | hash du mot de passe **admin** (#185), même format et même commande que `DASHBOARD_PASSWORD_HASH`, mot de passe différent ; absent, vide ou identique à `DASHBOARD_PASSWORD_HASH` : admin désactivé (403). En prod : `/opt/vva/admin_password_hash`, posé par `VVA_REMOTE_FILE=/opt/vva/admin_password_hash infra/scripts/set-dashboard-password.sh` |
+| `FORWARDED_ALLOW_IPS` | proxys dont uvicorn croit `X-Forwarded-For` (`--proxy-headers`) : sous-réseau(x) du réseau Traefik, calculé par `deploy.sh` (`docker network inspect $PROXY_NETWORK`) ou fixé dans `proxy.env` ; jamais `*` (refusé) ; défaut de l'image `127.0.0.1` |
 
 Le séparateur `:` (pas de `$`) évite toute interpolation dans un `.env` ou un shell.
 Générer le hash sans l'écrire dans l'historique du shell :
@@ -31,25 +32,27 @@ personnelle dans le cookie. Le cookie `Secure` impose HTTPS (Traefik en prod).
 
 ### Session admin (#185, [ADR-005](../docs/adr/ADR-005-auth-admin.md))
 
-Seule porte des commandes Pause et Plafond ([`control-api.md`](control-api.md)). Cookie `vva_admin`
+Seule porte des commandes Pause, Reprise et Plafond ([`control-api.md`](control-api.md)). Cookie `vva_admin`
 = `<identifiant aléatoire 256 bits>.<HMAC-SHA256 base64url>`, clé dérivée de `DASHBOARD_SESSION_KEY`
 et de `ADMIN_PASSWORD_HASH` (changer l'un ou l'autre ferme les sessions admin), vérifié en temps
 constant. Attributs : `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, `Max-Age=28800`. La
 session vit côté serveur (mémoire du processus, un seul worker) : **8 h** au plus après la
 connexion, fermée après **30 min** sans requête admin (fenêtre glissante : chaque requête admin la
-repousse), fermée par la déconnexion ou un redémarrage. Jeton **CSRF** aléatoire lié à la session,
+repousse), fermée par la déconnexion, une nouvelle connexion depuis le même navigateur (l'ancienne
+session du cookie est fermée) ou un redémarrage. Jeton **CSRF** aléatoire lié à la session,
 champ caché `csrf` de chaque formulaire POST admin, comparé en temps constant.
 
 | Route | Accès | Réponses (toutes `no-store`) |
 |---|---|---|
 | `GET /admin/login` | public | 200 formulaire (champ `password`), sans navigation ; 403 admin désactivé |
-| `POST /admin/login` | public, limité | 303 vers `/controls` + cookie `vva_admin` ; 401 « Mot de passe incorrect. Il te reste N essais cette minute. » ; 403 admin désactivé ; 413 corps > 4 Ko ; 429 + `Retry-After` |
-| `POST /admin/logout` | admin + CSRF | 303 vers `/controls`, session fermée côté serveur, cookie effacé ; 401 sans session ; 403 CSRF |
+| `POST /admin/login` | public, limité | 303 vers `/controls` + cookie `vva_admin` ; 401 « Mot de passe incorrect. Il te reste N essais cette minute. » ; 403 admin désactivé, ou mot de passe admin égal à celui du dashboard ; 413 corps > 4 Ko ; 429 + `Retry-After` |
+| `POST /admin/logout` | admin + CSRF | 303 vers `/controls`, session fermée côté serveur, cookie effacé ; 401 sans session (cookie effacé aussi) ; 403 CSRF |
 
 Limite de `POST /admin/login` : **5 essais par minute par IP** (fenêtre glissante, adresse vue par
-uvicorn `--proxy-headers`), plus un plafond global de 30 essais par minute toutes IP (borne le coût
-PBKDF2 d'une attaque répartie). Ordre des contrôles : configuration, limite, taille, mot de passe ;
-une tentative compte qu'elle réussisse ou non.
+uvicorn `--proxy-headers` et `FORWARDED_ALLOW_IPS`), plus un plafond global de 30 essais par minute
+toutes IP (borne le coût PBKDF2 d'une attaque répartie). Les deux limites sont vérifiées avant d'en
+consommer une : un essai refusé (429) ne compte ni pour l'IP ni pour le global. Ordre des contrôles :
+configuration, limite, taille, mot de passe ; une tentative admise compte qu'elle réussisse ou non.
 
 ## Routes
 
@@ -65,7 +68,7 @@ voir [`control-api.md`](control-api.md)).
 | `POST /login` | public, limité | voir ci-dessous |
 | `GET /interactions` | session | 200 page ; 303 vers `/login` sans session valide (aucune lecture de la base) ; 503 si la base est illisible |
 | `GET /tokens` | session | 200 page (totaux par agent et modèle, 24 h / 7 j) ; 303 vers `/login` sans session valide ; voir [`token-usage.md`](token-usage.md) |
-| `GET /controls` | session ou admin | onglet « Contrôles » (#185) : lecture seule, commandes Pause et Plafond pour l'admin ; voir [`control-api.md`](control-api.md) |
+| `GET /controls` | session ou admin | onglet « Contrôles » (#185) : lecture seule, commandes Pause, Reprise et Plafond pour l'admin ; voir [`control-api.md`](control-api.md) |
 | `GET /stream` | session | 200 `text/event-stream` ; **401** sans session valide (aucune lecture de la base) ; 503 si la base est illisible |
 | `GET /static/live.js` | public | client temps réel (`EventSource`), sans dépendance ni CDN |
 | `GET /static/tokens.css` | public | feuille de style du design system |

@@ -44,6 +44,7 @@ WRONG = "Mot de passe incorrect."
 EXPIRED = "Session admin absente ou expirée : reconnecte-toi."
 FORBIDDEN = "Requête refusée : jeton de sécurité invalide. Recharge la page Contrôles."
 TOO_BIG = "Requête trop volumineuse."
+SAME_SECRET = "Accès admin refusé : le mot de passe admin doit différer de celui du dashboard."  # noqa: S105 - message
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 router = APIRouter()
@@ -113,16 +114,24 @@ class KeyedLimiter:
             hits.popleft()
         return hits
 
-    def allow(self, key: str) -> bool:
+    def blocked(self, key: str) -> bool:
+        """Limite atteinte pour `key` ? (ne consomme rien)."""
+        with self._lock:
+            return len(self._window(key, self.clock())) >= self.max_attempts
+
+    def hit(self, key: str) -> None:
+        """Compte un essai pour `key`."""
         with self._lock:
             now = self.clock()
             if len(self._hits) > MAX_TRACKED_IPS:
                 self._prune(now)
-            hits = self._window(key, now)
-            if len(hits) >= self.max_attempts:
-                return False
-            hits.append(now)
-            return True
+            self._window(key, now).append(now)
+
+    def allow(self, key: str) -> bool:
+        if self.blocked(key):
+            return False
+        self.hit(key)
+        return True
 
     def remaining(self, key: str) -> int:
         with self._lock:
@@ -161,10 +170,13 @@ def reset() -> None:
 
 
 def _key() -> bytes | None:
-    """Clé de signature admin, ou None si l'admin est désactivé (hash ou clé absents)."""
+    """Clé de signature admin, ou None si l'admin est désactivé.
+
+    Désactivé : hash ou clé de session absents, ou hash admin identique à celui du dashboard.
+    """
     encoded = os.environ.get(ADMIN_HASH_ENV, "")
     key = auth.session_key()
-    if not encoded or key is None:
+    if not encoded or key is None or encoded == os.environ.get(auth.PASSWORD_HASH_ENV, ""):
         return None
     return hmac.new(key.encode(), f"admin-v1:{encoded}".encode(), hashlib.sha256).digest()
 
@@ -242,16 +254,30 @@ async def login(request: Request) -> Response:
     if key is None:
         return page(request, 403, DISABLED)
     ip = _client_ip(request)
-    if not LOGIN_LIMITER.allow(ip) or not GLOBAL_LIMITER.allow(GLOBAL_KEY):
+    # Les deux limites sont vérifiées avant d'en consommer une (pas d'await entre les deux).
+    if LOGIN_LIMITER.blocked(ip) or GLOBAL_LIMITER.blocked(GLOBAL_KEY):
         wait = max(LOGIN_LIMITER.retry_after(ip), GLOBAL_LIMITER.retry_after(GLOBAL_KEY), 1)
         message = f"Trop d'essais. Limite de 5 par minute atteinte. Réessaie dans {wait} s."
         return page(request, 429, message, retry_after=wait)
+    LOGIN_LIMITER.hit(ip)
+    GLOBAL_LIMITER.hit(GLOBAL_KEY)
     form = await auth.read_form(request)
     if form is None:
         return page(request, 413, TOO_BIG)
-    encoded = os.environ.get(ADMIN_HASH_ENV, "")
-    if not await run_in_threadpool(auth.verify_password, form.get("password", ""), encoded):
+    password = form.get("password", "")
+    if not await run_in_threadpool(auth.verify_password, password, os.environ[ADMIN_HASH_ENV]):
         return page(request, 401, _remaining_message(ip))
+    dashboard_hash = os.environ.get(auth.PASSWORD_HASH_ENV, "")
+    if await run_in_threadpool(auth.verify_password, password, dashboard_hash):
+        return page(request, 403, SAME_SECRET)
+    return _open_session(request, key)
+
+
+def _open_session(request: Request, key: bytes) -> RedirectResponse:
+    """Nouvelle session ; celle du cookie courant (s'il y en a une) est fermée."""
+    previous = _sid(key, request.cookies.get(COOKIE_NAME, ""))
+    if previous is not None:
+        SESSIONS.close(previous)
     response = RedirectResponse(HOME, status_code=303, headers=NO_STORE)
     response.set_cookie(
         COOKIE_NAME,
@@ -269,8 +295,13 @@ async def login(request: Request) -> Response:
 async def logout(request: Request) -> Response:
     granted = await authorize(request)
     if isinstance(granted, Response):
+        if granted.status_code == 401:
+            _forget_cookie(granted)
         return granted
     SESSIONS.close(granted[0].sid)
-    response = RedirectResponse(HOME, status_code=303, headers=NO_STORE)
+    return _forget_cookie(RedirectResponse(HOME, status_code=303, headers=NO_STORE))
+
+
+def _forget_cookie(response: Response) -> Response:
     response.delete_cookie(COOKIE_NAME, path="/", secure=True, httponly=True, samesite="strict")
     return response

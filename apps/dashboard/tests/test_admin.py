@@ -6,6 +6,7 @@ d'inactivité), jeton CSRF lié à la session, 5 essais/min par IP, réponses `n
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -129,6 +130,24 @@ def test_admin_disabled_without_env_is_403_everywhere(
         assert "Accès admin désactivé." in resp.text
 
 
+def test_admin_disabled_when_its_hash_is_the_dashboard_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(admin.ADMIN_HASH_ENV, os.environ[auth.PASSWORD_HASH_ENV])
+    for method, path in [("GET", "/admin/login"), ("POST", "/admin/login")]:
+        resp = new_client().request(method, path, data={"password": PASSWORD})
+        assert resp.status_code == 403 and "Accès admin désactivé." in resp.text
+
+
+def test_admin_refused_when_its_password_is_the_dashboard_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(admin.ADMIN_HASH_ENV, auth.hash_password(PASSWORD, iterations=1_000))
+    resp = new_client().post("/admin/login", data={"password": PASSWORD})
+    assert resp.status_code == 403 and "set-cookie" not in resp.headers
+    assert "doit différer" in resp.text
+
+
 # --- Limite 5 essais / minute par IP ------------------------------------------------------------
 def test_login_limited_to_5_attempts_per_minute_per_ip() -> None:
     client = new_client("198.51.100.1")
@@ -144,6 +163,22 @@ def test_login_limited_to_5_attempts_per_minute_per_ip() -> None:
 def test_wrong_password_tells_remaining_attempts() -> None:
     resp = new_client().post("/admin/login", data={"password": "faux"})
     assert "Il te reste 4 essais cette minute." in resp.text
+
+
+def test_ip_refused_attempts_do_not_consume_the_global_budget() -> None:
+    client = new_client("198.51.100.9")
+    for _ in range(admin.GLOBAL_MAX + 5):
+        admin_login(client, "faux")
+    assert admin_login(new_client("198.51.100.10")) == 303
+
+
+def test_global_refusal_does_not_consume_the_ip_budget() -> None:
+    for n in range(admin.GLOBAL_MAX):
+        assert admin_login(new_client(f"192.0.2.{n}"), "faux") == 401
+    victim = new_client("198.51.100.11")
+    assert admin_login(victim, "faux") == 429
+    admin.GLOBAL_LIMITER.reset()
+    assert admin.LOGIN_LIMITER.remaining("198.51.100.11") == admin.PER_IP_MAX
 
 
 def test_ip_window_slides_after_a_minute() -> None:
@@ -216,6 +251,25 @@ def test_logout_closes_the_session_server_side() -> None:
     replay = new_client()
     replay.cookies.set(admin.COOKIE_NAME, stolen or "")
     assert replay.post("/controls/pause").status_code == 401
+
+
+def test_relogin_closes_the_previous_session_of_the_cookie() -> None:
+    client = admin_client()
+    old = client.cookies.get(admin.COOKIE_NAME) or ""
+    assert admin_login(client) == 303
+    replay = new_client()
+    replay.cookies.set(admin.COOKIE_NAME, old)
+    assert replay.post("/controls/pause").status_code == 401
+    assert "Connecté en admin" in client.get("/controls").text
+
+
+def test_logout_without_session_clears_the_cookie() -> None:
+    client = new_client()
+    client.cookies.set(admin.COOKIE_NAME, "perime.signature")
+    resp = client.post("/admin/logout")
+    assert resp.status_code == 401
+    cookie = resp.headers["set-cookie"].lower()
+    assert cookie.startswith(f"{admin.COOKIE_NAME}=") and "max-age=0" in cookie
 
 
 def test_logout_requires_csrf() -> None:

@@ -1,9 +1,8 @@
 """Pause des agents et plafond de tokens (contrat : contracts/control-api.md).
 
 API GET /api/v1/control (jeton Bearer d'ingestion), lue par le hook PreToolUse. Onglet
-« Contrôles » (#185) : lecture seule pour le visiteur ; Pause et Plafond, confirmés, pour l'admin
-(session `dashboard.admin`, ADR-005). Ce sont les seules routes qui écrivent `controls`.
-La reprise reste au terminal du tech lead (`db.resume`).
+« Contrôles » (#185) : lecture seule pour le visiteur ; Pause, Reprise et Plafond, confirmés, pour
+l'admin (session `dashboard.admin`, ADR-005). Ce sont les seules routes qui écrivent `controls`.
 """
 
 from __future__ import annotations
@@ -30,7 +29,8 @@ CAP_TOO_SMALL = "Il faut au moins 1 token."
 CAP_NOT_DIGITS = "Chiffres seulement."
 CAP_TOO_BIG = "Trop grand : le maximum est 1 000 000 000 tokens / 24 h."
 NOT_CONFIRMED = "Confirmation absente : aucune action n'a été envoyée."
-DONE = ("pause", "plafond")
+DONE = ("pause", "reprise", "plafond")
+CONFIRMABLE = ("pause", "reprise")
 
 TEMPLATES = Jinja2Templates(directory=Path(__file__).parent / "templates")
 TEMPLATES.env.filters["thousands"] = tokens.thousands
@@ -134,7 +134,8 @@ def _load() -> ControlState:
 
 def _preview(params: dict[str, str]) -> tuple[dict[str, Any], int]:
     """Panneaux de confirmation demandés par l'URL (admin seulement) ; 422 si valeur invalide."""
-    context: dict[str, Any] = {"confirm_pause": params.get("confirmer") == "pause"}
+    asked = params.get("confirmer")
+    context: dict[str, Any] = {"confirm": asked if asked in CONFIRMABLE else None}
     if params.get("fait") in DONE:
         context["done"] = params["fait"]
     if "plafond" not in params:
@@ -152,7 +153,7 @@ def _preview(params: dict[str, str]) -> tuple[dict[str, Any], int]:
 async def controls_page(request: Request) -> Response:
     session = admin.current(request)
     if session is None and not auth.is_authenticated(request):
-        return RedirectResponse("/login", status_code=303)
+        return RedirectResponse("/login", status_code=303, headers=admin.NO_STORE)
     try:
         state = await run_in_threadpool(_load)
     except sqlite3.Error as exc:
@@ -184,16 +185,28 @@ def _done(what: str) -> Response:
     return RedirectResponse(f"/controls?fait={what}", status_code=303, headers=admin.NO_STORE)
 
 
-@router.post("/controls/pause", response_model=None)
-async def pause(request: Request) -> Response:
+async def _confirmed(
+    request: Request, action: Callable[[sqlite3.Connection], None], what: str
+) -> Response:
+    """POST admin sans paramètre : session, CSRF, `confirm=oui`, puis l'écriture."""
     granted = await admin.authorize(request)
     if isinstance(granted, Response):
         return granted
     session, form = granted
     if form.get("confirm") != "oui":
         return await _refuse(request, session, error=NOT_CONFIRMED)
-    await _apply(lambda conn: db.pause(conn, REASON_MANUAL))
-    return _done("pause")
+    await _apply(action)
+    return _done(what)
+
+
+@router.post("/controls/pause", response_model=None)
+async def pause(request: Request) -> Response:
+    return await _confirmed(request, lambda conn: db.pause(conn, REASON_MANUAL), "pause")
+
+
+@router.post("/controls/resume", response_model=None)
+async def resume(request: Request) -> Response:
+    return await _confirmed(request, db.resume, "reprise")
 
 
 @router.post("/controls/cap", response_model=None)

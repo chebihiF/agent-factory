@@ -50,6 +50,7 @@
   </div>
   {% endif %}
   {% if done == "pause" %}<p class="band ok" role="status">✓ Agents mis en pause.</p>{% endif %}
+  {% if done == "reprise" %}<p class="band ok" role="status">✓ Agents relancés.</p>{% endif %}
   {% if done == "plafond" %}<p class="band ok" role="status">✓ Plafond enregistré. {{ state.cap_tokens | thousands }} tokens / 24 h</p>{% endif %}
   {% if error %}<p class="band danger" role="alert">▲ {{ error }}</p>{% endif %}
 
@@ -57,10 +58,21 @@
     <h2 id="pause-title">Pause des agents</h2>
     {% if state.paused %}
     <p class="band warn" role="status">❚❚ En pause{% if since %} depuis {{ since }}{% endif %} (motif : {{ state.reason or "inconnu" }})</p>
-    {% if session %}<p class="muted">Reprise : depuis le terminal du tech lead.</p>{% endif %}
+    {% if session and state.tokens_24h >= state.cap_tokens %}<p class="muted">▲ Plafond atteint : relève-le d'abord, sinon la pause revient.</p>{% endif %}
+    {% if session and confirm == "reprise" %}
+    <div class="confirm" role="group" aria-labelledby="confirm-resume">
+      <p id="confirm-resume"><strong>Reprendre tous les agents ?</strong></p>
+      <div class="actions">
+        <form method="post" action="/controls/resume"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="confirm" value="oui"><button class="btn" type="submit" autofocus>Confirmer la reprise</button></form>
+        <a class="btn ghost" href="/controls">Annuler</a>
+      </div>
+    </div>
+    {% elif session %}
+    <div class="actions"><a class="btn" href="/controls?confirmer=reprise">▶ Reprendre les agents</a></div>
+    {% endif %}
     {% else %}
     <p>● En marche</p>
-    {% if session and confirm_pause %}
+    {% if session and confirm == "pause" %}
     <div class="confirm" role="group" aria-labelledby="confirm-pause">
       <p id="confirm-pause"><strong>Mettre tous les agents en pause ?</strong></p>
       <div class="actions">

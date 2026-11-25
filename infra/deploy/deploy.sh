@@ -26,7 +26,22 @@ chmod 600 "$STATE_DIR/session_key"
 DASHBOARD_SESSION_KEY="$(cat "$STATE_DIR/session_key")"
 # Hash du mot de passe : posé par infra/scripts/set-dashboard-password.sh ; absent => /login reste en 503.
 DASHBOARD_PASSWORD_HASH="$(cat "$STATE_DIR/dashboard_password_hash" 2>/dev/null || true)"
-export DASHBOARD_SESSION_KEY DASHBOARD_PASSWORD_HASH
+# Hash admin (#185) : même script, VVA_REMOTE_FILE=$STATE_DIR/admin_password_hash ; absent => admin désactivé (403).
+ADMIN_PASSWORD_HASH="$(cat "$STATE_DIR/admin_password_hash" 2>/dev/null || true)"
+export DASHBOARD_SESSION_KEY DASHBOARD_PASSWORD_HASH ADMIN_PASSWORD_HASH
+# IP réelle des clients (limite de connexion admin par IP, #185) : uvicorn ne croit X-Forwarded-For
+# que des proxys de FORWARDED_ALLOW_IPS. Défaut : sous-réseau(x) du réseau Traefik ; proxy.env peut
+# le fixer. Jamais « * » (tout client choisirait son IP) : seuls chiffres, « . : / , » sont admis.
+if [ -z "${FORWARDED_ALLOW_IPS:-}" ]; then
+  FORWARDED_ALLOW_IPS="$(docker network inspect "${PROXY_NETWORK:-}" \
+    -f '{{range .IPAM.Config}}{{.Subnet}},{{end}}' 2>/dev/null || true)"
+  FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS%,}"
+  FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+fi
+case "$FORWARDED_ALLOW_IPS" in
+  *[!0-9A-Fa-f.:/,]*) echo "FORWARDED_ALLOW_IPS refusé (« * » ou caractère inattendu) : $FORWARDED_ALLOW_IPS" >&2; exit 1 ;;
+esac
+export FORWARDED_ALLOW_IPS
 
 COMPOSE_FILE="$HERE/compose.yaml"
 PROBE="${VVA_PROBE:-1}"
