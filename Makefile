@@ -1,6 +1,6 @@
 # Cibles silencieuses : n'affichent que les échecs (économie de tokens).
 .SILENT:
-.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall install-agents status telemetry-check
+.PHONY: help sync lint fmt type test audit check mapcheck build map run bootstrap ticket loop-install loop-uninstall ceiling-install ceiling-uninstall install-agents status telemetry-check
 
 UV := uv run -q
 SH := infra/scripts/quiet.sh
@@ -55,6 +55,13 @@ loop-install: ## Planifie la boucle autonome (launchd ; CONFIG=~/.vva/loop.yml p
 
 loop-uninstall: ## Retire la planification de la boucle autonome
 	tools/agents/bin/agent-loop.sh uninstall
+
+ceiling-install: ## Planifie le plafond de tokens (launchd ; REPO=<owner/repo> [DB=<base> INTERVAL=<min>])
+	test -n "$$REPO" || { echo "usage : make ceiling-install REPO=<owner/repo> [DB=<base>] [INTERVAL=<minutes>]" >&2; exit 2; }
+	tools/agents/bin/ceiling.sh install --repo "$$REPO" $${DB:+--db "$$DB"} $${INTERVAL:+--interval "$$INTERVAL"}
+
+ceiling-uninstall: ## Retire la planification du plafond de tokens
+	tools/agents/bin/ceiling.sh uninstall
 
 install-agents: ## Installe agents/skills/hooks dans un projet (PROJECT=<chemin> [OVERLAY=<fichier>])
 	test -n "$$PROJECT" || { echo "usage : make install-agents PROJECT=<chemin> [OVERLAY=<fichier>]" >&2; exit 2; }

@@ -156,15 +156,42 @@ Règle : `rules/token-budget.md` ; contrat : `contracts/token-ceiling.md`. Outil
 `tools/agents/bin/ceiling.sh` (`tools/agents/ceiling.py`, stdlib, Python 3.9).
 
 ```sh
-GH_TOKEN=$(gh auth token -u infinitySoftMA) tools/agents/bin/ceiling.sh --db vva.db --repo OWNER/REPO
-GH_TOKEN=$(gh auth token -u infinitySoftMA) tools/agents/bin/ceiling.sh --repo OWNER/REPO --dry-run  # simule
+tools/agents/bin/ceiling.sh --db vva.db --repo OWNER/REPO
+tools/agents/bin/ceiling.sh --repo OWNER/REPO --dry-run  # simule
 ```
 
 Mêmes défauts que `token-report.sh` (`VVA_DB_PATH`, `VVA_AGENTS_JOURNAL`). Le journal est propre au
 dépôt : `--repo` doit être celui dont les tickets alimentent ce journal. Plafonds : 150 000 tokens (ticket simple),
 300 000 (label `complex`). Au-dessus, un commentaire d'alerte (total et plafond) est posé sur le
-ticket, une seule fois par plafond. Alerte seulement. À lancer à la main ou en fin de tick de la
-boucle (non câblé ici) ; les seuils des hooks locaux sont alignés à la main sur la règle.
+ticket, une seule fois par plafond. Alerte seulement. À lancer à la main ou par la planification
+ci-dessous ; les seuils des hooks locaux sont alignés à la main sur la règle.
+
+**Jeton** : à chaque exécution, `ceiling.sh` lit `gh auth token -u infinitySoftMA` et l'impose comme
+`GH_TOKEN` (un jeton hérité est ignoré) ; il n'est ni écrit ni passé en argument. Bot indisponible
+(`gh` absent, compte non connecté, trousseau verrouillé) : message sur stderr, code 1, aucun appel
+sur les tickets.
+
+### Planification (#210)
+
+```sh
+make ceiling-install REPO=OWNER/REPO                           # base : VVA_DB_PATH, sinon ./vva.db
+make ceiling-install REPO=OWNER/REPO DB=<base> INTERVAL=30     # intervalle en minutes (défaut 15)
+launchctl list | grep agent-factory.ceiling                    # la tâche est chargée
+make ceiling-uninstall                                         # retour arrière
+```
+
+- `ceiling-install` rend `tools/agents/launchd/ceiling.plist.template` (label
+  `agent-factory.ceiling.<dossier du dépôt>.<hash court du chemin du clone>`, `StartInterval`, `PATH` réduit à ses entrées
+  absolues, aucun jeton) dans `~/Library/LaunchAgents`, puis `launchctl bootstrap gui/<uid>`.
+  Elle affiche la base retenue ; si `bootstrap` échoue, le plist est supprimé. Clone déplacé :
+  `ceiling-uninstall` avant le déplacement (le label change avec le chemin).
+  Relancer pour changer un réglage. Base absente, dépôt ou intervalle (1 à 1440) invalide : refus.
+- Chemins de la base et du journal figés à l'installation (absolus). La base est une copie locale
+  (voir « Sources ») : la planification ne la rafraîchit pas, les alertes datent de la copie.
+- Journal : `~/.vva/ceiling/ceiling.log` (dossier 700, fichier 600 ; `VVA_CEILING_DIR` pour un
+  autre dossier) : numéros de tickets, compteurs et erreurs, sans prompt, jeton ni donnée
+  d'enfant. Non horodaté et sans rotation.
+- Smoke test : `tools/agents/bin/ceiling.sh --repo OWNER/REPO --db <base> --dry-run`.
 
 ## Passation automatique (#83)
 

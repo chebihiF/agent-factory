@@ -35,6 +35,7 @@ ticket au-dessus de 150 000.
 - Le commentaire ne contient que des compteurs : aucune donnée d'enfant, aucun secret, aucun
   identifiant de session. Aucun service payant. Alerte seulement, aucun blocage.
 
-Compte GitHub : le commentaire part sous le compte du `gh` actif ; le forcer par `GH_TOKEN` comme
-ci-dessus (bot `infinitySoftMA`). Un échec de `gh issue comment` est signalé par « alerte NON postée »
+Compte GitHub : `ceiling.sh` lit lui-même le jeton du bot `infinitySoftMA` à chaque exécution et
+l'impose comme `GH_TOKEN` (le préfixe de la commande ci-dessus est facultatif). Jeton indisponible :
+code 1, rien n'est écrit sur GitHub. Un échec de `gh issue comment` est signalé par « alerte NON postée »
 (distinct d'un ticket illisible).

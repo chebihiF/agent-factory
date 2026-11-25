@@ -137,14 +137,17 @@
 - `tools/agents/bin/handoff.sh` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/bin/token-report.sh` — Tokens par ticket, agent et modèle, ≤ 15 lignes, compteurs seuls (#19). Voir docs/agents.m
 - `tools/agents/ceiling.py` — Plafond de tokens par ticket : alerte au dépassement (#188). Voir rules/token-budget.md.
+- `tools/agents/ceiling_schedule.py` — Planification launchd du plafond de tokens (#210) : `ceiling.sh install` / `uninstall`.
 - `tools/agents/config/loop.example.yml` — Boucle autonome planifiée (#18) : copier en ~/.vva/loop.yml (local, jamais commité), puis
 - `tools/agents/config/model-routing.yml` — Routage des modèles des agents (#19) : source de vérité, lue par tools/agents/token_report
 - `tools/agents/cr.py` — CR d'agents en base SQLite : hook `record` et lecture `status` (#61). Voir docs/agents.md.
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/launchd/agents-loop.plist.template` — Boucle autonome planifiée (#18) : rendu par `make loop-install` (agent_loop.py install).
+- `tools/agents/launchd/ceiling.plist.template` — Plafond de tokens planifié (#210) : rendu par `make ceiling-install`, sans aucun jeton.
 - `tools/agents/tests/test_agent_loop.py` — Boucle autonome planifiée (#18) : gh, contrôles, pool, session et launchctl sont injectés.
 - `tools/agents/tests/test_agent_loop_contract.py` — Contrat #8/#18 : la boucle lit la vraie réponse de GET /api/v1/control du dashboard.
 - `tools/agents/tests/test_ceiling.py` — Plafonds de tokens par ticket et seuils de relève (#188) : alerte, règle et contrat.
+- `tools/agents/tests/test_ceiling_schedule.py` — Planification du plafond de tokens (#210) : launchctl et gh sont factices.
 - `tools/agents/tests/test_cr.py` — CR d'agents en base SQLite et `make status` (#61). Faux secrets construits à l'exécution.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
 - `tools/agents/tests/test_session_rules.py` — Règle de session des agents (#178) : contenu, bornes et référence par le tech lead.
@@ -162,5 +165,6 @@
 - `tools/telemetry/tests/test_emit.py` — Émetteur de hooks : stdin JSON -> ligne JSONL minimale (#4).
 - `tools/telemetry/tests/test_gate.py` — Hook PreToolUse pretool_gate.py (#8) : code 2 si pause, échec sûr (cache 5 min).
 - `tools/telemetry/tests/test_py39.py` — Les scripts lancés par les hooks tournent sous le python3 du Mac (3.9) (#59).
+- `tools/telemetry/tests/test_settings_template.py` — Non-régression (#210) : hooks/settings.example.json n'appelle plus l'ancien log_event.sh.
 - `tools/telemetry/tests/test_ship.py` — Expéditeur : JSONL -> POST /api/v1/events par lots, sans perte ni doublon (#4).
 - `tools/telemetry/tests/test_wiring_doc.py` — Procédure de câblage de l'ingestion (#180) : documentée, sans valeur secrète.

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Plafond de tokens planifié (#210) : rendu par `make ceiling-install`, sans aucun jeton. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>@LABEL@</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>@SCRIPT@</string>
+    <string>--db</string>
+    <string>@DB@</string>
+    <string>--journal</string>
+    <string>@JOURNAL@</string>
+    <string>--repo</string>
+    <string>@REPO@</string>
+  </array>
+  <key>WorkingDirectory</key><string>@ROOT@</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>@PATH@</string>
+  </dict>
+  <key>StartInterval</key><integer>@INTERVAL@</integer>
+  <key>StandardOutPath</key><string>@LOG@</string>
+  <key>StandardErrorPath</key><string>@LOG@</string>
+  <key>Umask</key><integer>63</integer>
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>
