@@ -44,11 +44,14 @@ Le `reviewer` n'intervient que si le ticket est `complex`, **ou** si le diff dé
 **ou** s'il touche du code de sécurité ou un contrat (`contracts/`). Un seul tour, sur le diff seul
 (`git diff origin/main...`), sans relire le dépôt. Hors de ces cas, la CI suffit.
 
-### Plafonds de tokens
-- Contexte par session : ~150 k tokens ; au-delà, passation (résumé dans l'épique #21) et nouvelle session (voir #83).
-- Bilan par ticket (mesuré par `tools/agents/bin/token-report.sh`, voir `docs/agents.md`) :
-  simple ≤ 150 k, `complex` ≤ 300 k ; part d'Opus ≤ 30 % des tokens du sprint.
-- Un ticket qui dépasse son plafond est signalé dans le bilan de sprint.
+### Plafonds de tokens (règle : `rules/token-budget.md`, contrat : `contracts/token-ceiling.md`)
+- Par ticket (mesuré par `tools/agents/bin/token-report.sh`) : simple ≤ 150 k, `complex` ≤ 300 k,
+  3 relectures au plus, ≤ 3 fichiers touchés ; part d'Opus ≤ 30 % des tokens du sprint (DoD).
+- Au dépassement, `tools/agents/bin/ceiling.sh` pose un commentaire d'alerte sur le ticket (alerte
+  seulement, aucun blocage) ; le ticket est aussi signalé dans le bilan de sprint.
+- Passation (≤ 200 mots : fait, reste, fichiers clés) dans le ticket à 60 % du contexte.
+- Relève du tech lead : à 150 k de contexte, à la prochaine frontière de phase ; à 250 k, immédiate.
+  Passation dans l'épique #21 (voir #83).
 
 ### Contexte allégé
 Lire des extraits (`grep -n`, `offset`/`limit`), jamais des fichiers entiers sans besoin ;

@@ -30,6 +30,7 @@ Le tech lead (`rules/tech-lead.md`) et les sous-agents l'appliquent.
   sous-agent s'arrête et rend à son appelant un rapport de passation (mêmes rubriques).
 - Rapports dans l'issue de suivi (#21) et les PR, pas dans des messages entre sessions.
 - Ne pas réimplémenter la détection du seuil : le hook de #83 est la seule source.
+- Plafonds par ticket et seuils chiffrés (relève immédiate à 250 000) : `rules/token-budget.md`.
 
 ## 3. Archivage de l'ancienne session
 
