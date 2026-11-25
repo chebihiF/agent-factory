@@ -165,5 +165,6 @@
 - `tools/telemetry/tests/test_emit.py` — Émetteur de hooks : stdin JSON -> ligne JSONL minimale (#4).
 - `tools/telemetry/tests/test_gate.py` — Hook PreToolUse pretool_gate.py (#8) : code 2 si pause, échec sûr (cache 5 min).
 - `tools/telemetry/tests/test_py39.py` — Les scripts lancés par les hooks tournent sous le python3 du Mac (3.9) (#59).
+- `tools/telemetry/tests/test_settings_template.py` — Non-régression (#210) : hooks/settings.example.json n'appelle plus l'ancien log_event.sh.
 - `tools/telemetry/tests/test_ship.py` — Expéditeur : JSONL -> POST /api/v1/events par lots, sans perte ni doublon (#4).
 - `tools/telemetry/tests/test_wiring_doc.py` — Procédure de câblage de l'ingestion (#180) : documentée, sans valeur secrète.
