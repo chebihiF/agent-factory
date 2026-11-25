@@ -12,9 +12,10 @@ import logging
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Literal
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -184,6 +185,8 @@ class Board:
     unknown_project: bool
     projects: dict[str, int]
     github_error_at: str | None
+    github_data_at: str | None  # ISO UTC du dernier succès (ou 304) GitHub, ou None (#186)
+    github_data_hm: str | None  # même instant, « HH:MM » à Paris
     ingestion: Ingestion
     silent_minutes: int
     tickets_here: bool  # False : le filtre vise un projet dont les tickets ne sont pas suivis
@@ -223,6 +226,18 @@ def span(delta: timedelta) -> str:
 
 def french_date(now: datetime) -> str:
     return f"{WEEKDAYS[now.weekday()]} {now.day} {MONTHS[now.month - 1]} {now.year}"
+
+
+def paris_hm(moment: datetime, now: datetime) -> str:
+    """« HH:MM » à Paris, précédé de « JJ/MM » si ce n'est pas aujourd'hui ; « UTC » sans tzdata."""
+    try:
+        zone: tzinfo = ZoneInfo("Europe/Paris")
+        suffix = ""
+    except ZoneInfoNotFoundError:
+        zone, suffix = UTC, " UTC"
+    local = moment.astimezone(zone)
+    day = "" if local.date() == now.astimezone(zone).date() else local.strftime("%d/%m ")
+    return f"{day}{local.strftime('%H:%M')}{suffix}"
 
 
 def role(agent_type: str | None) -> str:
@@ -483,6 +498,7 @@ def build(
     error_at: datetime | None,
     requested: str,
     now: datetime,
+    data_at: datetime | None = None,
 ) -> Board:
     projects = activity.agent_counts(conn)
     project = requested if requested and requested in projects else None
@@ -498,6 +514,8 @@ def build(
         unknown_project=bool(requested) and project is None,
         projects=projects,
         github_error_at=error_at.strftime("%H:%M:%S") if error_at else None,
+        github_data_at=data_at.astimezone(UTC).isoformat() if data_at else None,
+        github_data_hm=paris_hm(data_at, now) if data_at else None,
         ingestion=state,
         silent_minutes=minutes,
         tickets_here=tickets_here,
@@ -514,9 +532,10 @@ def build(
 
 
 def load(requested: str) -> Board:
-    snapshot, error_at = github.CACHE.get()
+    snapshot, error_at, fetched = github.CACHE.read()
+    data_at = datetime.fromtimestamp(fetched, UTC) if fetched is not None else None
     with db.connect() as conn:
-        return build(conn, snapshot, error_at, requested, datetime.now(UTC))
+        return build(conn, snapshot, error_at, requested, datetime.now(UTC), data_at)
 
 
 @router.get("/", response_model=None)

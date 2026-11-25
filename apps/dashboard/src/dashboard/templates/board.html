@@ -69,7 +69,7 @@
     </p>
     {% if b.unknown_project %}<p role="status" class="banner info">Projet inconnu : affichage de tous les projets.</p>{% endif %}
     {% if b.github_error_at %}
-    <div role="alert" class="banner danger"><p>Lecture GitHub impossible ({{ b.github_error_at }} UTC) : tickets et pull requests affichent les dernières données connues.</p><a href="{{ reload_url }}">Recharger les données</a></div>
+    <div role="alert" class="banner danger"><p>Lecture GitHub impossible ({{ b.github_error_at }} UTC) : tickets et pull requests affichent les dernières données connues.{% if b.github_data_hm %} Données du {{ b.github_data_hm }}.{% endif %}</p><a href="{{ reload_url }}">Recharger les données</a></div>
     {% endif %}
     {% if b.ingestion == "silent" %}
     <div role="status" class="banner warn"><p><strong>Aucun signe de vie depuis {{ b.silent_minutes }} min.</strong> Soit aucun agent ne travaille, soit l'envoi des événements est coupé : si un agent tourne, vérifie le câblage de la télémétrie (docs/telemetry-cablage.md).</p></div>

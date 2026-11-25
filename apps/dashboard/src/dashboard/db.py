@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS controls (
     CHECK ((paused = 0 AND reason IS NULL) OR (paused = 1 AND reason IS NOT NULL))
 );
 INSERT OR IGNORE INTO controls (id) VALUES (1);
+-- dernière réponse GitHub par URL (#186) : ETag + corps JSON public, relus au redémarrage
+-- (requête conditionnelle, liste affichée même sous la limite de 60 req/h) ; aucun jeton
+CREATE TABLE IF NOT EXISTS github_cache (
+    url        TEXT PRIMARY KEY,
+    etag       TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    fetched_at REAL NOT NULL
+);
 """
 
 
@@ -225,3 +233,33 @@ def set_cap(conn: sqlite3.Connection, cap_tokens: int) -> None:
             f"UPDATE controls SET cap_tokens = ?, {_TOUCH} WHERE id = 1",  # noqa: S608 - constante
             (cap_tokens,),
         )
+
+
+GithubRow = tuple[str, str, float]  # (etag, corps JSON, heure du dernier succès, epoch s)
+
+
+def read_github_cache(conn: sqlite3.Connection, url: str) -> GithubRow | None:
+    row = conn.execute(
+        "SELECT etag, body, fetched_at FROM github_cache WHERE url = ?", (url,)
+    ).fetchone()
+    return (str(row[0]), str(row[1]), float(row[2])) if row else None
+
+
+def write_github_cache(
+    conn: sqlite3.Connection, url: str, etag: str, body: str, fetched_at: float
+) -> None:
+    with conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO github_cache (url, etag, body, fetched_at) VALUES (?, ?, ?, ?)",
+            (url, etag, body, fetched_at),
+        )
+
+
+def touch_github_cache(conn: sqlite3.Connection, url: str, fetched_at: float) -> None:
+    with conn:
+        conn.execute("UPDATE github_cache SET fetched_at = ? WHERE url = ?", (fetched_at, url))
+
+
+def delete_github_cache(conn: sqlite3.Connection, url: str) -> None:
+    with conn:
+        conn.execute("DELETE FROM github_cache WHERE url = ?", (url,))

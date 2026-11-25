@@ -9,6 +9,7 @@ import dataclasses
 import json
 import re
 import sqlite3
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -702,3 +703,34 @@ def test_sprint_labels_are_numeric_sorted_by_number_and_fall_back_when_milestone
     assert sprint("sprints", "sprint:2") == "Sprint 2"
     assert sprint("sprint-4", milestone={"title": "  "}) == "Sprint 4"
     assert sprint("sprint-4", milestone={"title": "Sprint 7"}) == "Sprint 7"
+
+
+# --- Heure des données GitHub (#186) -------------------------------------------------------
+def test_rate_limited_github_shows_persisted_data_time(
+    client: TestClient, github: GitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    at = datetime(2026, 11, 25, 13, 5, tzinfo=UTC).timestamp()  # 14:05 à Paris (hiver)
+    limited = github_api.GithubCache(
+        lambda path: (_ for _ in ()).throw(github_api.RateLimited(until=time.time() + 600)),
+        restore=lambda path: ([{"number": 9, "title": "Reste visible", "state": "open"}], at),
+        spawn=lambda task: task(),
+    )
+    limited.read()  # démarrage : instantané persisté, puis la lecture de fond essuie la limite
+    monkeypatch.setattr(github_api, "CACHE", limited)
+    page = text(client.get("/").text)
+    assert "Données du 14:05" in page
+    assert "Reste visible" in page
+
+
+def test_board_exposes_github_data_time_as_iso_utc(env: None) -> None:
+    at = datetime(2026, 11, 25, 13, 5, tzinfo=UTC)
+    with db.connect() as conn:
+        shown = board.build(conn, github_api.Snapshot(), None, "", at, data_at=at)
+    assert shown.github_data_at == "2026-11-25T13:05:00+00:00"
+    assert shown.github_data_hm == "14:05"
+
+
+def test_data_time_names_the_day_when_not_today() -> None:
+    at = datetime(2026, 11, 24, 13, 5, tzinfo=UTC)
+    assert board.paris_hm(at, datetime(2026, 11, 25, 9, 0, tzinfo=UTC)) == "24/11 14:05"
+    assert board.paris_hm(at, datetime(2026, 11, 24, 20, 0, tzinfo=UTC)) == "14:05"
