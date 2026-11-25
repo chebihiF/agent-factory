@@ -1,3 +1,3 @@
-nav[aria-label="Navigation principale"] { display: flex; flex-wrap: wrap; gap: var(--space-4); font-size: var(--font-size-small); }
-nav[aria-label="Navigation principale"] a { color: var(--color-accent); font-weight: 600; }
+nav[aria-label="Navigation principale"] { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); font-size: var(--font-size-small); }
+nav[aria-label="Navigation principale"] a { display: inline-flex; align-items: center; min-height: var(--target-min); color: var(--color-accent); font-weight: 600; }
 nav[aria-label="Navigation principale"] a[aria-current="page"] { color: var(--color-text); text-decoration: none; }

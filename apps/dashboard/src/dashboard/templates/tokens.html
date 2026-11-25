@@ -8,12 +8,13 @@
   <link rel="stylesheet" href="/static/nav.css">
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    body { margin: 0 auto; max-width: 48rem; padding: 2rem 1rem 4rem; }
+    body { margin: 0 auto; max-width: 48rem; padding: 2rem 1rem 4rem; overflow-wrap: anywhere; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
     th, td { padding: .4rem .6rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
     th { text-align: left; font-weight: 600; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
-    footer { position: fixed; bottom: 1rem; font-size: .8rem; opacity: .6; }
+    small { font-size: var(--font-size-small); }
+    footer { margin-top: var(--space-5); font-size: var(--font-size-small); color: var(--color-text-muted); }
   </style>
 </head>
 <body>
