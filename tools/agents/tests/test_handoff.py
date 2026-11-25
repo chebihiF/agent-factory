@@ -192,6 +192,29 @@ def test_check_escalates_from_phase_to_immediate_in_one_session(
     assert "immédiate" in capsys.readouterr().out
 
 
+def test_check_custom_threshold_above_250k_cites_the_real_threshold(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    t = _transcript(tmp_path / "t.jsonl", [_assistant(0, 260_000, 0)])
+    assert _main(["check", "--threshold", "300000"], stdin=_hook("s1", t)) == 0
+    assert capsys.readouterr().out == ""  # 260 k < 300 k : rien
+    t = _transcript(tmp_path / "t2.jsonl", [_assistant(0, 310_000, 0)])
+    assert _main(["check", "--threshold", "300000"], stdin=_hook("s1", t)) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "immédiate" in context and "seuil 300 000" in context and "250 000" not in context
+
+
+def test_check_after_immediate_a_lower_reading_stays_silent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    high = _transcript(tmp_path / "high.jsonl", [_assistant(0, 260_000, 0)])
+    low = _transcript(tmp_path / "low.jsonl", [_assistant(0, 160_000, 0)])
+    assert _main(["check"], stdin=_hook("s1", high)) == 0
+    assert "immédiate" in capsys.readouterr().out
+    assert _main(["check"], stdin=_hook("s1", low)) == 0  # redescente : pas de fausse alerte
+    assert capsys.readouterr().out == ""
+
+
 @pytest.mark.parametrize(
     "stdin",
     ["", "pas du json", "[]", '{"session_id": "../x", "transcript_path": "/etc/passwd"}', "{}"],

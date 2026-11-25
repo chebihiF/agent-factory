@@ -136,8 +136,12 @@ def check(hook_text: str, threshold: int = THRESHOLD) -> str:
         tokens = context_tokens(Path(path))
         if tokens is None or tokens < threshold:
             return ""
-        immediate = tokens >= max(IMMEDIATE_THRESHOLD, threshold)
-        level = IMMEDIATE_THRESHOLD if immediate else threshold
+        level = max(IMMEDIATE_THRESHOLD, threshold)
+        immediate = tokens >= level
+        if immediate:
+            _claim(_state_dir(), session)  # une fois l'immédiat émis, plus d'alerte de phase
+        else:
+            level = threshold
         if not _claim(_state_dir(), f"{session}.now" if immediate else session):
             return ""
         context = request_text(tokens, level, immediate)
