@@ -143,6 +143,7 @@
 - `tools/agents/handoff.py` — Passation automatique de session au seuil de contexte (#83). Voir docs/agents.md.
 - `tools/agents/launchd/agents-loop.plist.template` — Boucle autonome planifiée (#18) : rendu par `make loop-install` (agent_loop.py install).
 - `tools/agents/tests/test_agent_loop.py` — Boucle autonome planifiée (#18) : gh, contrôles, pool, session et launchctl sont injectés.
+- `tools/agents/tests/test_agent_loop_contract.py` — Contrat #8/#18 : la boucle lit la vraie réponse de GET /api/v1/control du dashboard.
 - `tools/agents/tests/test_ceiling.py` — Plafonds de tokens par ticket et seuils de relève (#188) : alerte, règle et contrat.
 - `tools/agents/tests/test_cr.py` — CR d'agents en base SQLite et `make status` (#61). Faux secrets construits à l'exécution.
 - `tools/agents/tests/test_handoff.py` — Passation automatique de session au seuil de contexte (#83). gh et claude sont injectés.
