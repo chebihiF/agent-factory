@@ -8,6 +8,7 @@ Contrat : docs/agents.md. Stdlib ; Python 3.9 (python3 du Mac).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import sys
 from collections.abc import Sequence
@@ -26,7 +27,9 @@ MAX_INTERVAL_MIN = 1440
 
 
 def label() -> str:
-    return al.label().replace(".loop.", ".ceiling.", 1)
+    """Nom du dossier + hash court du chemin : deux clones homonymes ne s'écrasent pas."""
+    digest = hashlib.sha256(str(al.ROOT).encode("utf-8")).hexdigest()[:8]
+    return f"{al.label().replace('.loop.', '.ceiling.', 1)}.{digest}"
 
 
 def log_dir() -> Path:
@@ -77,8 +80,9 @@ def install(repo: str, db: Path, journal: Path, interval_min: int, launchctl: al
     domain = f"gui/{os.getuid()}"
     launchctl(["bootout", f"{domain}/{label()}"])  # absent : sans effet
     if launchctl(["bootstrap", domain, str(target)]) != 0:
+        target.unlink(missing_ok=True)  # sinon launchd le chargerait à la prochaine ouverture
         raise SystemExit("ceiling : launchctl bootstrap a échoué")
-    print(f"plafond planifié : {label()}, toutes les {interval_min} min")
+    print(f"plafond planifié : {label()}, toutes les {interval_min} min, base {db.resolve()}")
 
 
 def uninstall(launchctl: al.Launchctl) -> None:

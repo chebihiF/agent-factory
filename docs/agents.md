@@ -181,8 +181,10 @@ make ceiling-uninstall                                         # retour arrière
 ```
 
 - `ceiling-install` rend `tools/agents/launchd/ceiling.plist.template` (label
-  `agent-factory.ceiling.<dossier du dépôt>`, `StartInterval`, `PATH` réduit à ses entrées
+  `agent-factory.ceiling.<dossier du dépôt>.<hash court du chemin du clone>`, `StartInterval`, `PATH` réduit à ses entrées
   absolues, aucun jeton) dans `~/Library/LaunchAgents`, puis `launchctl bootstrap gui/<uid>`.
+  Elle affiche la base retenue ; si `bootstrap` échoue, le plist est supprimé. Clone déplacé :
+  `ceiling-uninstall` avant le déplacement (le label change avec le chemin).
   Relancer pour changer un réglage. Base absente, dépôt ou intervalle (1 à 1440) invalide : refus.
 - Chemins de la base et du journal figés à l'installation (absolus). La base est une copie locale
   (voir « Sources ») : la planification ne la rafraîchit pas, les alertes datent de la copie.

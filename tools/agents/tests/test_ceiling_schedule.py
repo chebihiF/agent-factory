@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import os
 import plistlib
+import re
 import shutil
 import sqlite3
 import stat
@@ -12,6 +13,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
+import agent_loop
 import ceiling_schedule as cs
 import pytest
 
@@ -131,6 +133,21 @@ def test_install_refuse_une_entree_invalide(env: Path, args: list[str]) -> None:
 def test_echec_de_launchctl_signale(env: Path) -> None:
     with pytest.raises(SystemExit, match="bootstrap"):
         cs.main(["install", "--repo", REPO], FakeLaunchctl(bootstrap=5))
+    assert not _plist(env).exists()
+
+
+def test_label_distinct_par_chemin_de_clone(monkeypatch: pytest.MonkeyPatch) -> None:
+    labels = []
+    for root in ("/a/usine", "/b/usine", "/a/usine"):
+        monkeypatch.setattr(agent_loop, "ROOT", Path(root))
+        labels.append(cs.label())
+    assert labels[0] == labels[2] != labels[1]
+    assert re.fullmatch(r"agent-factory\.ceiling\.usine\.[0-9a-f]{8}", labels[0])
+
+
+def test_install_affiche_la_base_retenue(env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert cs.main(["install", "--repo", REPO], FakeLaunchctl()) == 0
+    assert f"base {(env / 'v & co.db').resolve()}" in capsys.readouterr().out
 
 
 # Scénario : jeton lu à l'exécution, ou absent
