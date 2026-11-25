@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title>Connexion admin — Agents Dashboard</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); font-size: var(--font-size-body); }
+    main { background: var(--color-surface); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-6); width: min(100% - var(--space-6), 440px); box-sizing: border-box; }
+    h1 { font-size: var(--font-size-title); margin: 0 0 var(--space-5); }
+    form { display: grid; gap: var(--space-3); }
+    label { font-size: var(--font-size-label); color: var(--color-text-muted); }
+    input { min-height: var(--target-min); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text); font: inherit; }
+    input[aria-invalid="true"] { border-color: var(--color-danger); }
+    .btn { min-height: var(--target-min); border: 0; border-radius: var(--radius-md); background: var(--color-accent); color: var(--color-on-accent); font: inherit; font-weight: 600; cursor: pointer; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    [role="alert"] { margin: 0 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-sm); background: var(--color-danger-bg); color: var(--color-danger); }
+    .back { display: inline-flex; align-items: center; min-height: var(--target-min); margin-top: var(--space-4); color: var(--color-accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Connexion admin</h1>
+    {% if message %}<p role="alert">▲ {{ message }}</p>{% endif %}
+    {% if not disabled %}
+    <form method="post" action="/admin/login">
+      <label for="password">Mot de passe admin</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus{% if retry_after %} disabled{% endif %}{% if invalid %} aria-invalid="true" aria-describedby="password-hint"{% endif %}>
+      {% if invalid %}<p id="password-hint">Vérifie le mot de passe puis réessaie.</p>{% endif %}
+      <button class="btn" type="submit"{% if retry_after %} disabled{% endif %}>{% if retry_after %}Réessayer dans {{ retry_after }} s{% else %}Se connecter{% endif %}</button>
+    </form>
+    {% endif %}
+    <a class="back" href="/controls">Retour à la vue lecture seule</a>
+  </main>
+</body>
+</html>

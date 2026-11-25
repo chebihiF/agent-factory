@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title>Contrôles — Agents Dashboard</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/nav.css">
+  <style>
+    h1 { font-size: var(--font-size-title); margin: 0 0 var(--space-4); }
+    h2 { font-size: var(--font-size-heading); margin: 0 0 var(--space-3); }
+    .panel { margin: 0 0 var(--space-4); padding: var(--space-4); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface); }
+    .band { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4); padding: var(--space-3); border-radius: var(--radius-sm); }
+    .band p, .band form { margin: 0; }
+    .info { background: var(--color-info-bg); color: var(--color-info); font-weight: 700; }
+    .warn { background: var(--color-warn-bg); color: var(--color-warn); }
+    .ok { background: var(--color-ok-bg); color: var(--color-ok); }
+    .danger { background: var(--color-danger-bg); color: var(--color-danger); }
+    .value { margin: 0 0 var(--space-2); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    meter { width: 100%; height: var(--space-4); }
+    .muted { margin: var(--space-2) 0 0; color: var(--color-text-muted); }
+    .actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }
+    .actions form { margin: 0; }
+    .field { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+    label { font-size: var(--font-size-label); color: var(--color-text-muted); }
+    input { min-height: var(--target-min); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-text); font: inherit; font-size: var(--font-size-body); }
+    input[aria-invalid="true"] { border-color: var(--color-danger); }
+    .field-error { margin: 0; color: var(--color-danger); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: var(--target-min); padding: 0 var(--space-4); border: 2px solid var(--color-accent); border-radius: var(--radius-md); background: var(--color-accent); color: var(--color-on-accent); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+    .btn.ghost { background: none; color: var(--color-accent); }
+    .btn.caution { background: none; border-color: var(--color-warn); color: var(--color-warn); }
+    .confirm { margin-top: var(--space-3); padding: var(--space-3); border: 2px solid var(--color-border); border-radius: var(--radius-sm); }
+    .confirm p { margin: 0 0 var(--space-2); }
+  </style>
+</head>
+<body>
+  {% with active="/controls" %}{% include "_appbar.html" %}{% endwith %}
+  <main class="page">
+  <h1>Contrôles</h1>
+  {% if session %}
+  <div class="band info">
+    <p role="status">● Connecté en admin</p>
+    <form method="post" action="/admin/logout"><input type="hidden" name="csrf" value="{{ session.csrf }}"><button class="btn ghost" type="submit">Se déconnecter</button></form>
+  </div>
+  {% else %}
+  <div class="band">
+    <p role="note">Lecture seule. Les commandes sont réservées à l'admin.</p>
+    <a class="btn ghost" href="/admin/login" aria-label="Connexion admin"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>Admin</span></a>
+  </div>
+  {% endif %}
+  {% if done == "pause" %}<p class="band ok" role="status">✓ Agents mis en pause.</p>{% endif %}
+  {% if done == "reprise" %}<p class="band ok" role="status">✓ Agents relancés.</p>{% endif %}
+  {% if done == "plafond" %}<p class="band ok" role="status">✓ Plafond enregistré. {{ state.cap_tokens | thousands }} tokens / 24 h</p>{% endif %}
+  {% if error %}<p class="band danger" role="alert">▲ {{ error }}</p>{% endif %}
+
+  <section class="panel" aria-labelledby="pause-title">
+    <h2 id="pause-title">Pause des agents</h2>
+    {% if state.paused %}
+    <p class="band warn" role="status">❚❚ En pause{% if since %} depuis {{ since }}{% endif %} (motif : {{ state.reason or "inconnu" }})</p>
+    {% if session and state.tokens_24h >= state.cap_tokens %}<p class="muted">▲ Plafond atteint : relève-le d'abord, sinon la pause revient.</p>{% endif %}
+    {% if session and confirm == "reprise" %}
+    <div class="confirm" role="group" aria-labelledby="confirm-resume">
+      <p id="confirm-resume"><strong>Reprendre tous les agents ?</strong></p>
+      <div class="actions">
+        <form method="post" action="/controls/resume"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="confirm" value="oui"><button class="btn" type="submit" autofocus>Confirmer la reprise</button></form>
+        <a class="btn ghost" href="/controls">Annuler</a>
+      </div>
+    </div>
+    {% elif session %}
+    <div class="actions"><a class="btn" href="/controls?confirmer=reprise">▶ Reprendre les agents</a></div>
+    {% endif %}
+    {% else %}
+    <p>● En marche</p>
+    {% if session and confirm == "pause" %}
+    <div class="confirm" role="group" aria-labelledby="confirm-pause">
+      <p id="confirm-pause"><strong>Mettre tous les agents en pause ?</strong></p>
+      <div class="actions">
+        <form method="post" action="/controls/pause"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="confirm" value="oui"><button class="btn" type="submit" autofocus>Confirmer la pause</button></form>
+        <a class="btn ghost" href="/controls">Annuler</a>
+      </div>
+    </div>
+    {% elif session %}
+    <div class="actions"><a class="btn caution" href="/controls?confirmer=pause">❚❚ Mettre en pause</a></div>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="cap-title">
+    <h2 id="cap-title">Plafond de tokens</h2>
+    <p class="value">{{ state.cap_tokens | thousands }} tokens / 24 h</p>
+    <meter min="0" max="{{ state.cap_tokens }}" value="{{ state.tokens_24h }}" aria-label="Part du plafond utilisée">{{ used_pct }} %</meter>
+    <p class="muted">{{ state.tokens_24h | thousands }} utilisés · {{ used_pct }} %</p>
+    {% if session and cap_new %}
+    <div class="confirm" role="group" aria-labelledby="confirm-cap">
+      <p id="confirm-cap"><strong>Changer le plafond ?</strong></p>
+      <p class="value">{{ state.cap_tokens | thousands }} → {{ cap_new | thousands }}</p>
+      <p>tokens / 24 h, soit {{ cap_change }}</p>
+      <div class="actions">
+        <form method="post" action="/controls/cap"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="cap" value="{{ cap_new }}"><input type="hidden" name="confirm" value="oui"><button class="btn" type="submit" autofocus>Confirmer le plafond</button></form>
+        <a class="btn ghost" href="/controls">Annuler</a>
+      </div>
+    </div>
+    {% elif session %}
+    <form method="get" action="/controls" class="field">
+      <label for="plafond">Nouveau plafond (tokens / 24 h)</label>
+      <input id="plafond" name="plafond" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="{{ cap_raw or '' }}" aria-describedby="plafond-hint{% if cap_error %} plafond-error{% endif %}"{% if cap_error %} aria-invalid="true"{% endif %}>
+      <p id="plafond-hint" class="muted">Entier de 1 à 1 000 000 000, chiffres seulement.</p>
+      {% if cap_error %}<p id="plafond-error" class="field-error">▲ {{ cap_error }}</p>{% endif %}
+      <div class="actions"><button class="btn" type="submit">Modifier le plafond</button></div>
+    </form>
+    {% endif %}
+  </section>
+  </main>
+</body>
+</html>

@@ -20,10 +20,11 @@
 - `agents/reviewer.md` — reviewer
 - `agents/scout.md` — scout
 - `agents/ux-designer.md` — ux-designer
-- `apps/dashboard/Dockerfile`
+- `apps/dashboard/Dockerfile` — --proxy-headers ne croit X-Forwarded-For que de ces proxys ; compose passe le sous-réseau 
 - `apps/dashboard/pyproject.toml`
 - `apps/dashboard/src/dashboard/__init__.py` — Agents Dashboard.
 - `apps/dashboard/src/dashboard/activity.py` — Lecture des événements d'agents, partagée par `/`, `/interactions` et `/stream`.
+- `apps/dashboard/src/dashboard/admin.py` — Connexion admin : seule porte des commandes Pause et Plafond (#185, ADR-005).
 - `apps/dashboard/src/dashboard/auth.py` — Connexion au dashboard (contrat : contracts/dashboard-routes.md).
 - `apps/dashboard/src/dashboard/board.py` — GET / : tableau de bord unique, en lecture seule (#179, spec docs/design/dashboard-refonte
 - `apps/dashboard/src/dashboard/controls.py` — Pause des agents et plafond de tokens (contrat : contracts/control-api.md).
@@ -41,16 +42,20 @@
 - `apps/dashboard/src/dashboard/stream.py` — GET /stream : flux SSE des événements d'agents (contrat : contracts/dashboard-routes.md).
 - `apps/dashboard/src/dashboard/templates/_appbar.html`
 - `apps/dashboard/src/dashboard/templates/_nav.html`
+- `apps/dashboard/src/dashboard/templates/admin_login.html`
 - `apps/dashboard/src/dashboard/templates/board.html`
+- `apps/dashboard/src/dashboard/templates/controls.html`
 - `apps/dashboard/src/dashboard/templates/interactions.html` — live-status { margin: 0; font-size: var(--font-size-small); color: var(--color-text-muted)
 - `apps/dashboard/src/dashboard/templates/login.html`
 - `apps/dashboard/src/dashboard/templates/tokens.html`
 - `apps/dashboard/src/dashboard/tokens.py` — Totaux de tokens par agent et par modèle, sur 24 h et 7 jours glissants.
 - `apps/dashboard/tests/test_activity.py` — Lecture des événements d'agents (#5, #68, #181), partagée par `/`, `/interactions`, `/stre
+- `apps/dashboard/tests/test_admin.py` — Connexion admin (#185, ADR-005) : seule porte des commandes Pause et Plafond.
 - `apps/dashboard/tests/test_auth.py` — Connexion au dashboard (#5) : mot de passe, cookie de session signé, limitation.
 - `apps/dashboard/tests/test_board.py` — Tableau de bord unique en lecture seule (#179) : GET /, spec docs/design/dashboard-refonte
 - `apps/dashboard/tests/test_board_qa.py` — QA #179 : cas limites du tableau de bord (360 px, unicode/darija, lecture seule).
-- `apps/dashboard/tests/test_controls.py` — Pause et plafond de tokens (#8) : API GET /api/v1/control seule (pages retirées par #179).
+- `apps/dashboard/tests/test_controls.py` — Pause et plafond de tokens (#8) : API GET /api/v1/control lue par le hook.
+- `apps/dashboard/tests/test_controls_page.py` — Onglet « Contrôles » (#185) : lecture seule pour le visiteur, Pause et Plafond pour l'admi
 - `apps/dashboard/tests/test_ensure_token.py` — Le script de déploiement crée le jeton d'ingestion une seule fois, en 600.
 - `apps/dashboard/tests/test_github.py` — Lecture GitHub du tableau de bord (#26, recentrée par #179) : client, cache, analyse.
 - `apps/dashboard/tests/test_ingest.py` — Ingestion authentifiée des événements d'agents (#3).
@@ -76,6 +81,7 @@
 - `docs/adr/ADR-002-stack-dashboard.md` — ADR-002 — Stack du dashboard (et des services Python)
 - `docs/adr/ADR-003-memoire-agents.md` — ADR-003 — Mémoire des agents : mémoire locale vs ADR
 - `docs/adr/ADR-004-separation-usine-produit.md` — ADR-004 — Séparer l'usine d'agents (A) et l'application vidéo (B)
+- `docs/adr/ADR-005-auth-admin.md` — ADR-005 — Connexion admin pour les commandes Pause, Reprise et Plafond
 - `docs/agents-memory.md` — Mémoire des agents — conventions
 - `docs/agents.md` — Installer les agents dans un projet (#71)
 - `docs/design/README.md` — Design system du dashboard
@@ -107,7 +113,7 @@
 - `infra/scripts/set-dashboard-password.sh` — Définit le mot de passe du dashboard (à lancer par le parent, sur le Mac).
 - `infra/scripts/test_bootstrap_worktree.py` — bootstrap_worktree.sh copie .claude/ sans worktrees/ ni telemetry/ et sans écraser.
 - `infra/scripts/test_deploy_bluegreen.py` — deploy.sh blue/green (#25) : faux docker/curl dans le PATH, appels enregistrés, aucun vrai
-- `infra/scripts/test_deploy_dashboard_secrets.py` — deploy.sh + compose.yaml (#30) : clé de session stable, hash transmis, /login fermé par dé
+- `infra/scripts/test_deploy_dashboard_secrets.py` — deploy.sh + compose.yaml (#30, #185) : clé de session stable, hashs transmis, fermés par d
 - `infra/scripts/test_next_version.py`
 - `infra/scripts/test_no_claude_tracked.py` — Garde-fou : aucun chemin .claude/ ni CLAUDE.md ne doit être suivi par git.
 - `infra/scripts/test_pool.py` — pool.sh : un ticket = une branche sur un poste libre du pool (#14).

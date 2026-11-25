@@ -22,6 +22,10 @@ x-dashboard: &dashboard
       # Posés par deploy.sh (/opt/vva/session_key, /opt/vva/dashboard_password_hash) ; hash absent => /login répond 503.
       DASHBOARD_SESSION_KEY: ${DASHBOARD_SESSION_KEY:-}
       DASHBOARD_PASSWORD_HASH: ${DASHBOARD_PASSWORD_HASH:-}
+      # #185 : /opt/vva/admin_password_hash ; absent => admin désactivé (403), le dashboard reste en lecture seule.
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      # Proxys de confiance pour X-Forwarded-For : sous-réseau du réseau Traefik (deploy.sh), jamais « * ».
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
       VVA_DB_PATH: /data/vva.db
     volumes:
       - vva-data:/data

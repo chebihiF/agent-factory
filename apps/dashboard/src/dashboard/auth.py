@@ -107,6 +107,12 @@ class RateLimiter:
 LOGIN_LIMITER = RateLimiter(max_attempts=5, window_s=60)
 
 
+def session_key() -> str | None:
+    """Clé HMAC des sessions si elle fait au moins 32 caractères, sinon None."""
+    key = os.environ.get(SESSION_KEY_ENV, "")
+    return key if len(key) >= MIN_SESSION_KEY_LEN else None
+
+
 def _settings() -> tuple[str, str] | None:
     """(hash, clé) si la connexion est configurée, sinon None (connexion fermée)."""
     encoded = os.environ.get(PASSWORD_HASH_ENV, "")
@@ -130,15 +136,21 @@ def _login_page(request: Request, status: int, message: str | None = None) -> HT
     return response
 
 
-async def _read_password(request: Request) -> str | None:
-    """Champ `password` d'un formulaire urlencodé borné ; None si trop gros."""
+async def read_form(request: Request) -> dict[str, str] | None:
+    """Formulaire urlencodé borné à 4 Ko (premier champ de chaque nom) ; None si trop gros."""
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
         if len(body) > MAX_FORM_BYTES:
             return None
     fields = parse_qs(body.decode("utf-8", "replace"), keep_blank_values=True)
-    return fields.get("password", [""])[0]
+    return {name: values[0] for name, values in fields.items()}
+
+
+async def _read_password(request: Request) -> str | None:
+    """Champ `password` d'un formulaire urlencodé borné ; None si trop gros."""
+    form = await read_form(request)
+    return None if form is None else form.get("password", "")
 
 
 @router.get("/login", response_class=HTMLResponse)

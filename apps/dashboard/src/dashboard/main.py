@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from dashboard import auth, db, tokens
+from dashboard.admin import router as admin_router
 from dashboard.auth import router as auth_router
 from dashboard.board import router as board_router
 from dashboard.controls import router as controls_router
@@ -29,6 +30,7 @@ app = FastAPI(title="Agents Dashboard", version=VERSION, docs_url=None, redoc_ur
 app.include_router(ingest_router)
 app.include_router(otlp_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(interactions_router)
 app.include_router(stream_router)
 app.include_router(controls_router)

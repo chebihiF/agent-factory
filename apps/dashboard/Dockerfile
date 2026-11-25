@@ -12,6 +12,8 @@ COPY --from=build /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION} VVA_DB_PATH=/data/vva.db
+# --proxy-headers ne croit X-Forwarded-For que de ces proxys ; compose passe le sous-réseau Traefik (#185).
+ENV FORWARDED_ALLOW_IPS=127.0.0.1
 VOLUME /data
 USER app
 EXPOSE 8000

@@ -1,6 +1,7 @@
-"""Pause et plafond de tokens (#8) : API GET /api/v1/control seule (pages retirées par #179).
+"""Pause et plafond de tokens (#8) : API GET /api/v1/control lue par le hook.
 
-Pause, reprise et plafond se règlent depuis le terminal du tech lead (fonctions de `db`).
+Pause, reprise et plafond aussi depuis l'onglet admin « Contrôles » (#185,
+voir test_controls_page.py) ou le terminal du tech lead.
 """
 
 from __future__ import annotations
@@ -67,13 +68,6 @@ def test_initial_state_running_with_default_cap(db_path: Path) -> None:
     assert body["reason"] is None
     assert body["cap_tokens"] == 500_000
     assert body["tokens_24h"] == 0
-
-
-def test_old_control_pages_are_gone(db_path: Path) -> None:
-    client = logged_in()
-    assert client.get("/controls").status_code == 404
-    for action in ("pause", "resume", "cap"):
-        assert client.post(f"/controls/{action}").status_code in (404, 405)
 
 
 # --- Pause / reprise depuis le terminal ------------------------------------------------------
@@ -161,10 +155,10 @@ def test_unreadable_db_is_503(db_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 def test_contract_documents_api_keys_env_and_terminal() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
     assert "`GET /api/v1/control`" in text
-    assert "`POST /controls" not in text and "`GET /controls`" not in text
+    assert "`POST /controls/resume`" in text
     for key in ("paused", "reason", "cap_tokens", "tokens_24h", "updated_at"):
         assert f"`{key}`" in text, key
     for name in ("VVA_CONTROL_URL", "VVA_INGEST_TOKEN", "PreToolUse", "code 2", "db.resume"):
         assert name in text, name
     served = set(app.openapi()["paths"])
-    assert "/api/v1/control" in served and "/controls" not in served
+    assert "/api/v1/control" in served and "/controls/resume" in served

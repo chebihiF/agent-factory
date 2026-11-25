@@ -4,9 +4,10 @@
   "/": '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
   "/tokens": '<path d="M5 20V10"/><path d="M12 20V4"/><path d="M19 20v-7"/>',
   "/interactions": '<path d="M4 5h16v11H9l-5 4z"/>',
+  "/controls": '<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/>',
 } %}
 <nav aria-label="Navigation principale">
-  {% for href, label in [("/", "Accueil"), ("/tokens", "Tokens"), ("/interactions", "Interactions")] %}
+  {% for href, label in [("/", "Accueil"), ("/tokens", "Tokens"), ("/interactions", "Interactions"), ("/controls", "Contrôles")] %}
   <a href="{{ href }}"{% if href == active %} aria-current="page"{% endif %}><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">{{ icons[href] | safe }}</svg><span>{{ label }}</span></a>
   {% endfor %}
 </nav>
