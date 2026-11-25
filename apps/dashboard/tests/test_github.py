@@ -300,3 +300,128 @@ def test_timeout_is_passed_to_http_client(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(github, "urlopen", fake)
     github.HttpJson()("/repos/o/r/issues")
     assert seen_timeouts == [github.HTTP_TIMEOUT_S] and 0 < github.HTTP_TIMEOUT_S <= 10
+
+
+# --- Persistance SQLite de l'ETag et de l'instantané (#186) ------------------------------------
+ISSUES_URL = "https://api.github.com/repos/o/r/issues?per_page=100"
+PATH = "/repos/o/r/issues?per_page=100"
+
+
+class MemoryStore:
+    """Double de `github.DbStore` : (etag, corps JSON, heure du succès) par URL."""
+
+    def __init__(self) -> None:
+        self.rows: dict[str, tuple[str, str, float]] = {}
+
+    def load(self, url: str) -> tuple[str, str, float] | None:
+        return self.rows.get(url)
+
+    def save(self, url: str, etag: str, body: str, fetched_at: float) -> None:
+        self.rows[url] = (etag, body, fetched_at)
+
+    def touch(self, url: str, fetched_at: float) -> None:
+        etag, body, _ = self.rows[url]
+        self.rows[url] = (etag, body, fetched_at)
+
+
+def _persisted(store: MemoryStore, at: float = 500.0) -> None:
+    body = json.dumps({"link": None, "data": [item(7, "P0")]})
+    store.rows[ISSUES_URL] = ('"old"', body, at)
+
+
+def test_success_is_persisted_with_its_etag(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = MemoryStore()
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([FakeResponse([{"a": 1}])], []))
+    github.HttpJson(store=store, wall=lambda: 42.0)(PATH)
+    etag, body, at = store.rows[ISSUES_URL]
+    assert (etag, at) == ('"v1"', 42.0)
+    assert json.loads(body)["data"] == [{"a": 1}]
+
+
+def test_restart_sends_the_persisted_etag_and_reuses_the_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = MemoryStore()
+    _persisted(store)
+    seen: list[urllib.request.Request] = []
+    answers: list[Any] = [HTTPError("u", 304, "Not Modified", Message(), None)]
+    monkeypatch.setattr(github, "urlopen", _urlopen_from(answers, seen))
+    http = github.HttpJson(store=store, wall=lambda: 900.0)
+    assert http(PATH) == [item(7, "P0")]
+    assert seen[0].get_header("If-none-match") == '"old"'
+    assert seen[0].get_header("Authorization") is None
+    assert store.rows[ISSUES_URL][2] == 900.0  # 304 : l'heure des données avance
+
+
+def test_peek_rebuilds_all_persisted_pages_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = MemoryStore()
+    next_link = '<https://api.github.com/repos/o/r/issues?page=2>; rel="next"'
+    store.rows[ISSUES_URL] = ('"1"', json.dumps({"link": next_link, "data": [1]}), 10.0)
+    store.rows["https://api.github.com/repos/o/r/issues?page=2"] = (
+        '"2"',
+        json.dumps({"link": None, "data": [2]}),
+        8.0,
+    )
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([], []))  # toute requête ferait échouer
+    assert github.HttpJson(store=store).peek(PATH) == ([1, 2], 8.0)
+    assert github.HttpJson(store=MemoryStore()).peek(PATH) is None
+
+
+def test_unreadable_persisted_row_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = MemoryStore()
+    store.rows[ISSUES_URL] = ('"x"', "pas du json", 1.0)
+    seen: list[urllib.request.Request] = []
+    monkeypatch.setattr(github, "urlopen", _urlopen_from([FakeResponse([1])], seen))
+    http = github.HttpJson(store=store)
+    assert http.peek(PATH) is None
+    assert http(PATH) == [1]
+    assert seen[0].get_header("If-none-match") is None
+
+
+def test_restart_shows_persisted_list_when_github_is_rate_limited(
+    gh: FakeGithub, clock: Clock
+) -> None:
+    gh.error = github.RateLimited(until=clock.now + 3000)
+    persisted_at = 1_700_000_000.0
+    cache = github.GithubCache(
+        gh,
+        clock=clock,
+        wall=clock,
+        restore=lambda path: ([item(7, "P0")], persisted_at),
+    )
+    snapshot, error_at, data_at = cache.read()
+    assert [i.number for i in snapshot.issues] == [7]
+    assert error_at is not None and data_at == persisted_at
+    clock.now += 1000  # avant la réinitialisation : aucune nouvelle requête
+    cache.read()
+    assert len(gh.calls) == 1
+
+
+def test_data_time_follows_every_successful_read(gh: FakeGithub, clock: Clock) -> None:
+    cache = github.GithubCache(gh, clock=clock, wall=clock, restore=lambda path: ([], 5.0))
+    assert cache.read()[2] == clock.now
+    gh.error = OSError("réseau")
+    clock.now += 181
+    assert cache.read()[2] == 1000.0  # échec : l'heure du dernier succès reste affichée
+
+
+def test_db_store_round_trip_and_no_secret(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VVA_DB_PATH", str(tmp_path / "vva.db"))
+    store = github.DbStore()
+    assert store.load(ISSUES_URL) is None
+    store.save(ISSUES_URL, '"e"', '{"data": []}', 1.0)
+    store.save(ISSUES_URL, '"f"', '{"data": [1]}', 2.0)  # remplace
+    store.touch(ISSUES_URL, 3.0)
+    assert store.load(ISSUES_URL) == ('"f"', '{"data": [1]}', 3.0)
+
+
+def test_db_store_never_raises_on_a_broken_database(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VVA_DB_PATH", str(tmp_path))  # un dossier : base illisible
+    store = github.DbStore()
+    assert store.load(ISSUES_URL) is None
+    store.save(ISSUES_URL, '"e"', "{}", 1.0)
+    store.touch(ISSUES_URL, 2.0)
