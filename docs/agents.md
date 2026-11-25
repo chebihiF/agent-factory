@@ -175,7 +175,7 @@ pour le label `complex` (agents d'implémentation) et le `reviewer`.
 
 ```sh
 tools/agents/bin/handoff.sh check                      # hook UserPromptSubmit (JSON sur stdin)
-tools/agents/bin/handoff.sh check --threshold 120000   # seuil en tokens (défaut 150000)
+tools/agents/bin/handoff.sh check --threshold 120000   # seuil de phase en tokens (défaut 150000)
 tools/agents/bin/handoff.sh post  --note-file note.md   # valider et poster dans #21
 tools/agents/bin/handoff.sh latest                      # dernière note marquée de #21
 tools/agents/bin/handoff.sh relay --note-file note.md   # déconseillé (voir Relais)
@@ -184,8 +184,10 @@ tools/agents/bin/handoff.sh relay --note-file note.md   # déconseillé (voir Re
 - **Seuil** : contexte = dernier `usage` du fil principal du transcript (input + cache lu +
   cache créé ; les sous-agents sont ignorés). L'alerte douce à 100 000 tokens est gérée ailleurs :
   `check` ne fait rien en dessous de **150 000** (réglable : `--threshold <tokens>`, à placer
-  dans la commande du hook). Au seuil, une seule fois par session (marqueur
-  `~/.vva/handoff/<session>.done`, `VVA_HANDOFF_DIR`), il émet `additionalContext` : le tech lead
+  dans la commande du hook). Deux seuils alignés sur `rules/token-budget.md` §3 : **150 000** =
+  relève à la prochaine frontière de phase ; **250 000** (`IMMEDIATE_THRESHOLD`) = relève
+  immédiate. Chaque seuil, une seule fois par session (marqueurs `~/.vva/handoff/<session>.done`
+  et `<session>.now.done`, `VVA_HANDOFF_DIR`), il émet `additionalContext` : le tech lead
   écrit la note et la poste avec `post` ; la relève est une session indépendante
   (`rules/session-agents.md`). `check` ne bloque jamais (exit 0, silencieux si erreur).
 - **Note** (contrat) : ≤ 10 lignes, rubriques `Fait`, `Reste`, `Fichiers clés`, `Pièges` en début

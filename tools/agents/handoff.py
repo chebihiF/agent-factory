@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-THRESHOLD = 150_000
+THRESHOLD = 150_000  # rules/token-budget.md §3 : relève à la prochaine frontière de phase
+IMMEDIATE_THRESHOLD = 250_000  # idem : relève immédiate, sans attendre la frontière
 ISSUE = "21"
 DEFAULT_REPO = "chebihiF/viral-video-agents"
 DEFAULT_AUTHORS = "chebihiF,infinitySoftMA"
@@ -108,11 +109,16 @@ def _spaced(n: int) -> str:
     return f"{n:_}".replace("_", " ")
 
 
-def request_text(tokens: int, threshold: int) -> str:
+def request_text(tokens: int, threshold: int, immediate: bool = False) -> str:
+    timing = (
+        "relève immédiate, sans attendre la fin du ticket en cours. "
+        if immediate
+        else "relève à la prochaine frontière de phase (ticket livré, PR créée). "
+    )
     return (
         f"Passation de session : le contexte atteint {_spaced(tokens)} tokens "
-        f"(seuil {_spaced(threshold)}). "
-        "Avant toute autre action : écris la note de passation dans un fichier temporaire "
+        f"(seuil {_spaced(threshold)}) : {timing}"
+        "Écris la note de passation dans un fichier temporaire "
         f"(≤ {MAX_NOTE_LINES} lignes : Fait / Reste / Fichiers clés / Pièges ; aucun secret ni "
         "donnée d'enfant), poste-la avec `tools/agents/bin/handoff.sh post --note-file <fichier>` "
         f"(commentaire de #{ISSUE}), puis laisse la relève à une session indépendante "
@@ -121,16 +127,24 @@ def request_text(tokens: int, threshold: int) -> str:
 
 
 def check(hook_text: str, threshold: int = THRESHOLD) -> str:
-    """Hook UserPromptSubmit : JSON de hook au seuil (une fois par session), sinon rien."""
+    """Hook UserPromptSubmit : JSON de hook à chaque seuil (une fois par session et par seuil)."""
     try:
         hook = json.loads(hook_text)
         session, path = hook["session_id"], hook["transcript_path"]
         if not (isinstance(session, str) and SESSION_ID.match(session) and isinstance(path, str)):
             return ""
         tokens = context_tokens(Path(path))
-        if tokens is None or tokens < threshold or not _claim(_state_dir(), session):
+        if tokens is None or tokens < threshold:
             return ""
-        context = request_text(tokens, threshold)
+        level = max(IMMEDIATE_THRESHOLD, threshold)
+        immediate = tokens >= level
+        if immediate:
+            _claim(_state_dir(), session)  # une fois l'immédiat émis, plus d'alerte de phase
+        else:
+            level = threshold
+        if not _claim(_state_dir(), f"{session}.now" if immediate else session):
+            return ""
+        context = request_text(tokens, level, immediate)
         output = {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit"}}
         output["hookSpecificOutput"]["additionalContext"] = context
         return json.dumps(output, ensure_ascii=False)
