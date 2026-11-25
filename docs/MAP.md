@@ -50,7 +50,7 @@
 - `apps/dashboard/tests/test_auth.py` — Connexion au dashboard (#5) : mot de passe, cookie de session signé, limitation.
 - `apps/dashboard/tests/test_board.py` — Tableau de bord unique en lecture seule (#179) : GET /, spec docs/design/dashboard-refonte
 - `apps/dashboard/tests/test_board_qa.py` — QA #179 : cas limites du tableau de bord (360 px, unicode/darija, lecture seule).
-- `apps/dashboard/tests/test_controls.py` — Pause et plafond de tokens (#8) : API GET /api/v1/control seule (pages retirées par #179).
+- `apps/dashboard/tests/test_controls.py` — Pause et plafond de tokens (#8) : API GET /api/v1/control lue par le hook.
 - `apps/dashboard/tests/test_ensure_token.py` — Le script de déploiement crée le jeton d'ingestion une seule fois, en 600.
 - `apps/dashboard/tests/test_github.py` — Lecture GitHub du tableau de bord (#26, recentrée par #179) : client, cache, analyse.
 - `apps/dashboard/tests/test_ingest.py` — Ingestion authentifiée des événements d'agents (#3).

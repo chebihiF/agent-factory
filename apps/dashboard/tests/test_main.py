@@ -19,8 +19,9 @@ LABELS = {
     "/": "Accueil",
     "/tokens": "Tokens",
     "/interactions": "Interactions",
+    "/controls": "Contrôles",
 }
-DETAIL_PAGES = ["/", "/tokens", "/interactions"]
+DETAIL_PAGES = ["/", "/tokens", "/interactions", "/controls"]
 
 
 def unreachable_github(path: str) -> Any:
@@ -97,7 +98,7 @@ def test_page_has_common_nav_with_active_link(client: TestClient, path: str) -> 
     assert [href for href, _, current in links if current] == [path]
 
 
-@pytest.mark.parametrize("path", ["/progress", "/api/v1/progress", "/activity", "/controls"])
+@pytest.mark.parametrize("path", ["/progress", "/api/v1/progress", "/activity"])
 def test_old_pages_are_gone(client: TestClient, path: str) -> None:
     assert client.get(path).status_code == 404
 
@@ -107,8 +108,8 @@ def test_nav_is_not_shown_on_login(env: None) -> None:
 
 
 def test_pages_share_one_appbar_and_nav_partial() -> None:
-    for name in ("board", "tokens", "interactions"):
+    for name in ("board", "tokens", "interactions", "controls"):
         assert 'include "_appbar.html"' in (TEMPLATES / f"{name}.html").read_text()
     assert 'include "_nav.html"' in (TEMPLATES / "_appbar.html").read_text()
-    for gone in ("index", "progress", "activity", "controls"):
+    for gone in ("index", "progress", "activity"):
         assert not (TEMPLATES / f"{gone}.html").exists()

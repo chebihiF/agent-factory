@@ -18,8 +18,8 @@ from dashboard import github
 
 STATIC = Path(github.__file__).parent / "static"
 ROOT = Path(github.__file__).parents[4]
-PAGES = ["/", "/tokens", "/interactions"]
-LABELS = ["Accueil", "Tokens", "Interactions"]
+PAGES = ["/", "/tokens", "/interactions", "/controls"]
+LABELS = ["Accueil", "Tokens", "Interactions", "Contrôles"]
 CSS_FILES = ["nav.css", "board.css", "tokens.css"]
 
 
@@ -33,7 +33,8 @@ def inline_styles(name: str) -> str:
 
 def all_css() -> str:
     parts = [read(STATIC / name) for name in CSS_FILES]
-    parts += [inline_styles(n) for n in ("tokens.html", "interactions.html", "login.html")]
+    pages = ("tokens.html", "interactions.html", "login.html", "controls.html", "admin_login.html")
+    parts += [inline_styles(n) for n in pages]
     return "\n".join(parts)
 
 
@@ -63,8 +64,10 @@ def test_nav_has_labels_icons_and_current_page(client: TestClient, path: str) ->
         assert '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"' in body
 
 
-def test_login_has_no_nav(env: None) -> None:
+def test_login_has_no_nav(env: None, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "<nav" not in new_client().get("/login").text
+    monkeypatch.setenv("ADMIN_PASSWORD_HASH", "pbkdf2_sha256:1:00:00")
+    assert "<nav" not in new_client().get("/admin/login").text
 
 
 def test_board_section_shortcuts_are_a_group_not_a_second_nav(client: TestClient) -> None:
@@ -73,7 +76,7 @@ def test_board_section_shortcuts_are_a_group_not_a_second_nav(client: TestClient
 
 
 # --- Viewport et zone sûre ------------------------------------------------------------------
-@pytest.mark.parametrize("path", [*PAGES, "/login"])
+@pytest.mark.parametrize("path", [*PAGES, "/login", "/admin/login"])
 def test_viewport_covers_the_safe_area(client: TestClient, path: str) -> None:
     content = "width=device-width, initial-scale=1, viewport-fit=cover"
     assert f'<meta name="viewport" content="{content}">' in client.get(path).text
@@ -122,7 +125,9 @@ def test_no_font_below_16px_in_any_stylesheet_or_inline_style() -> None:
     assert all(size >= 16 for size in font_sizes_px(all_css())), font_sizes_px(all_css())
 
 
-@pytest.mark.parametrize("name", ["tokens", "interactions", "login", "board"])
+@pytest.mark.parametrize(
+    "name", ["tokens", "interactions", "login", "board", "controls", "admin_login"]
+)
 def test_templates_use_no_small_or_relative_shrink(name: str) -> None:
     html = read(TEMPLATES / f"{name}.html")
     assert "<small" not in html
@@ -159,6 +164,10 @@ def test_form_fields_and_buttons_are_at_least_44px() -> None:
     assert "36px" not in login
     assert "min-height: var(--target-min)" in rule(login, "input")
     assert "min-height: var(--target-min)" in rule(login, "button")
+    for name in ("admin_login.html", "controls.html"):
+        css = inline_styles(name)
+        assert "min-height: var(--target-min)" in rule(css, "input"), name
+        assert "min-height: var(--target-min)" in rule(css, ".btn"), name
 
 
 def test_retry_link_of_interactions_has_a_44px_target(client: TestClient) -> None:
