@@ -1,9 +1,10 @@
 # Contrôles : pause des agents et plafond de tokens (#8)
 
-Le tech lead met les agents en pause (ou fixe un plafond de tokens) depuis son terminal ; le dashboard
-est en lecture seule (#179) et n'expose aucune page ni POST de contrôle ; le hook
+Le parent met les agents en pause ou règle le plafond de tokens depuis l'onglet « Contrôles » du
+dashboard, connecté en **admin** (#185, [ADR-005](../docs/adr/ADR-005-auth-admin.md)) ; le tech lead
+peut aussi le faire depuis son terminal. Le reste du dashboard est en lecture seule (#179). Le hook
 `PreToolUse` du Mac lit cet état avant chaque outil. Alignement code / contrat vérifié par
-`apps/dashboard/tests/test_controls.py` et `tools/telemetry/tests/test_gate.py`.
+`apps/dashboard/tests/test_controls.py`, `test_controls_page.py` et `tools/telemetry/tests/test_gate.py`.
 
 ## État
 
@@ -34,10 +35,32 @@ comparaison en temps constant, 503 si non configuré). La session de navigateur 
 | 401 | jeton absent ou faux | `{"detail": "..."}` |
 | 503 | jeton non configuré, ou base illisible | `{"detail": "..."}` |
 
-## Réglage depuis le terminal du tech lead (pages retirées par #179)
+## Onglet « Contrôles » (#185)
 
-Plus de `/controls` ni de POST : le tableau de bord `/` ne fait que lire (jauge du plafond). Sur le
-VPS, dans le conteneur du dashboard (même `VVA_DB_PATH`) :
+Spec : `docs/design/pause-plafond.md`. Session admin, cookie, CSRF et limite de connexion :
+[`dashboard-routes.md`](dashboard-routes.md). Toutes les réponses sont `Cache-Control: no-store`.
+
+| Route | Accès | Réponses |
+|---|---|---|
+| `GET /controls` | session du dashboard ou admin | 200 état en lecture seule (aucun formulaire POST, aucun bouton) ; vue admin : bouton « Mettre en pause » et champ « Nouveau plafond » ; 303 vers `/login` sans session ; 503 base illisible ; ne fait que lire (pas de pause automatique au plafond) |
+| `GET /controls?confirmer=pause` | admin | panneau « Mettre tous les agents en pause ? » : seul endroit où existe le formulaire `POST /controls/pause` |
+| `GET /controls?plafond=<n>` | admin | panneau « Changer le plafond ? » (`ancien → nouveau`, écart en %) : seul endroit du formulaire `POST /controls/cap` ; **422** valeur invalide |
+| `POST /controls/pause` | admin + CSRF | champs `csrf`, `confirm=oui` ; 303 vers `/controls?fait=pause` (`db.pause(conn, "manuel")`) |
+| `POST /controls/cap` | admin + CSRF | champs `csrf`, `confirm=oui`, `cap` ; 303 vers `/controls?fait=plafond` (`db.set_cap`) |
+
+Refus des deux `POST`, dans cet ordre : **403** admin désactivé (`ADMIN_PASSWORD_HASH` ou
+`DASHBOARD_SESSION_KEY` absents) ; **401** session admin absente, expirée ou fermée (la session du
+dashboard seule ne suffit pas) ; **413** corps > 4 Ko ; **403** jeton CSRF absent ou faux ; **422**
+`confirm` différent de `oui` (sans confirmation, rien n'est écrit) ou plafond invalide. **429** :
+limite de connexion admin (5 essais par minute et par IP), voir `POST /admin/login`.
+
+Plafond saisi : chiffres ASCII seulement (« Chiffres seulement. »), de **1 à 1 000 000 000**
+(« Il faut au moins 1 token. », « Trop grand : le maximum est 1 000 000 000 tokens / 24 h. »).
+Pas de route de reprise (`POST /controls/resume` : 404) : la reprise reste au terminal ci-dessous.
+
+## Réglage depuis le terminal du tech lead
+
+Sur le VPS, dans le conteneur du dashboard (même `VVA_DB_PATH`) :
 
 ```sh
 uv run python -c "from dashboard import db
@@ -49,7 +72,8 @@ with db.connect() as c: db.resume(c)"              # reprise
 ```
 
 `db.pause`, `db.resume` et `db.set_cap` sont les seules écritures de la table `controls`, avec la
-pause automatique au plafond ci-dessus.
+pause automatique au plafond ci-dessus. Côté HTTP, seules `POST /controls/pause` et
+`POST /controls/cap` écrivent (test d'exclusivité dans `test_controls_page.py`).
 
 ## Hook `PreToolUse` : `tools/telemetry/pretool_gate.py`
 
