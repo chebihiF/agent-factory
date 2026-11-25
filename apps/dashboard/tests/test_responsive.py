@@ -170,6 +170,39 @@ def test_form_fields_and_buttons_are_at_least_44px() -> None:
         assert "min-height: var(--target-min)" in rule(css, ".btn"), name
 
 
+def _luminance(hex_color: str) -> float:
+    rgb = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+@pytest.mark.parametrize("name", ["login.html", "admin_login.html"])
+def _color(block: str, name: str) -> str:
+    match = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", block)
+    assert match, name
+    return match.group(1)
+
+
+@pytest.mark.parametrize("name", ["login.html", "admin_login.html"])
+def test_login_button_keeps_a_visible_contrasted_focus_ring(name: str) -> None:
+    """#190 : anneau global non écrasé, décalé de 2 px du bouton, >= 3:1 vs page et carte."""
+    tokens = read(STATIC / "tokens.css")
+    assert ":focus-visible { outline: var(--focus-ring); outline-offset: 2px; }" in tokens
+    assert "--focus-ring: 2px solid var(--color-focus)" in tokens
+    assert "outline" not in inline_styles(name)
+    light = tokens.split("@media (prefers-color-scheme: dark)")[0]
+    dark = tokens.split(':root[data-theme="dark"]')[-1]
+    for block in (light, dark):
+        for ground in ("color-bg", "color-surface"):
+            ratio = _contrast(_color(block, "color-focus"), _color(block, ground))
+            assert ratio >= 3, (ground, ratio)
+
+
 def test_retry_link_of_interactions_has_a_44px_target(client: TestClient) -> None:
     css = inline_styles("interactions.html")
     assert "min-height: var(--target-min)" in rule(css, '[role="alert"] a')
