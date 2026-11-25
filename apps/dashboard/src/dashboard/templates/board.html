@@ -19,14 +19,16 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <title>Tableau de bord des agents</title>
   <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/nav.css">
   <link rel="stylesheet" href="/static/board.css">
   <script src="/static/board.js" defer></script>
 </head>
 <body>
+{% with active="/" %}{% include "_appbar.html" %}{% endwith %}
 <main>
   <header class="top">
     <div class="title">
@@ -47,9 +49,9 @@
     {% endif %}
   </header>
 
-  <nav class="jump" aria-label="Aller à une section">
+  <div class="jump" role="group" aria-label="Aller à une section">
     <a href="#a-faire">À faire</a><a href="#agents">Agents</a><a href="#avancement">Tickets</a><a href="#quotas">Quotas</a>
-  </nav>
+  </div>
 
   <div id="erreur-reseau" class="banner danger" hidden>
     <p>Les données n'ont pas pu être rechargées. Les dernières données restent affichées.</p>

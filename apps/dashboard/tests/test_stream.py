@@ -253,7 +253,9 @@ def test_contract_documents_stream() -> None:
 def test_interactions_page_is_wired_to_the_stream(client: TestClient) -> None:
     seed(3)
     html = client.get("/interactions").text
-    assert re.search(r'<main data-stream data-last-id="3" data-refresh="#sessions">', html)
+    assert re.search(
+        r'<main class="page" data-stream data-last-id="3" data-refresh="#sessions">', html
+    )
     assert '<script src="/static/live.js" defer></script>' in html
 
 

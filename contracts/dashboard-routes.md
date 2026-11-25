@@ -45,7 +45,7 @@ Retirées par #179 (tableau de bord unique, lecture seule) : `/progress`, `/api/
 | `GET /stream` | session | 200 `text/event-stream` ; **401** sans session valide (aucune lecture de la base) ; 503 si la base est illisible |
 | `GET /static/live.js` | public | client temps réel (`EventSource`), sans dépendance ni CDN |
 | `GET /static/tokens.css` | public | feuille de style du design system |
-| `GET /static/nav.css` | public | style de la barre de navigation commune des pages de détail (Tableau de bord, Tokens, Interactions ; `aria-current="page"` sur la page active) |
+| `GET /static/nav.css` | public | coque commune des pages (#192-#194, spec `docs/design/pause-plafond.md`) : un seul `<nav aria-label="Navigation principale">` (Accueil, Tokens, Interactions ; `aria-current="page"` sur la page active), barre d'onglets basse (cibles 56 px, zone sûre iOS) sous 900 px, en-tête à navigation horizontale dès 900 px, contenu 1200 px au plus |
 | `GET /static/board.js` | public | rafraîchissement de `/` par GET toutes les 5 s et envoi du filtre (JS natif, sans CDN) |
 | `GET /static/board.css` | public | style du tableau de bord (variables de `tokens.css` uniquement) |
 
